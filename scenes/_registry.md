@@ -10,4 +10,4 @@ Each entry includes the scene name, the file path, current status, a one-line pu
 
 | Scene | File | Status | Purpose | Dependencies |
 |-------|------|--------|---------|--------------|
-| (none yet) | | | | |
+| POCSquareScene | scenes/poc-square.js | Implemented | Proof-of-concept scene with a single arrow-key-controlled square. Verifies the engine end to end. | RectRenderer, KeyboardMover |

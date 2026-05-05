@@ -10,4 +10,5 @@ Each entry includes the script name, the file path, current status, a one-line p
 
 | Script | File | Status | Purpose | Lifecycle hooks used |
 |--------|------|--------|---------|----------------------|
-| (none yet) | | | | |
+| RectRenderer | scripts/rect-renderer.js | Implemented | Draws a filled rectangle centered at the host's position. Configurable width, height, and color. | draw |
+| KeyboardMover | scripts/keyboard-mover.js | Implemented | Moves the host based on arrow keys. Diagonal movement is normalized so diagonal speed equals cardinal speed. | update |
