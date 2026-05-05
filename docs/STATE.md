@@ -4,14 +4,12 @@ Last updated: 2026-05-05
 
 ## Current status
 
-Scaffolding complete. No engine code written yet.
+Architecture locked in. Ready to implement engine.
 
-## What was done in the last session
+## What was done in the most recent session
 
-- Created the GitHub repo `browser-game-engine` (private).
-- Established the folder structure: `engine/`, `scenes/`, `objects/`, `scripts/`, `games/`, `build/`, `docs/`.
-- Wrote initial documentation: `README.md`, `CLAUDE.md`, `docs/ARCHITECTURE.md` (stub), `docs/CONVENTIONS.md`, `docs/STATE.md`, `docs/DECISIONS.md`.
-- Created empty registries: `scenes/_registry.md`, `objects/_registry.md`, `scripts/_registry.md`.
+- Resolved the five open architectural questions and recorded them as ADR-0004 through ADR-0008 in `docs/DECISIONS.md`.
+- Expanded `docs/ARCHITECTURE.md` from a stub into a full spec covering all six engine classes/modules, their public APIs, the frame lifecycle, transform handling, signal naming conventions, and file layout.
 
 ## Currently in progress
 
@@ -19,17 +17,15 @@ Nothing.
 
 ## Next up
 
-1. Finalize the engine core design in `docs/ARCHITECTURE.md`. Specifically: the exact Scene and GameObject API, the signal bus contract, how input is routed.
-2. Implement the first version of the engine in `engine/core.js` (or split across `engine/scene.js`, `engine/game-object.js`, `engine/signal-bus.js` if cleaner).
-3. Build a minimal proof-of-concept scene to verify the architecture works end to end. Suggested first POC: a colored square that moves with arrow keys, demonstrating Scene lifecycle, GameObject, an attachable input-driven Script, and a render call.
-4. Produce the first single-file HTML build in `build/` so the user can open and verify it runs.
+1. Implement `engine/signal-bus.js`. Smallest and most independent piece; good first build.
+2. Implement `engine/input.js`. Standalone module; depends only on the canvas reference for mouse coordinates.
+3. Implement `engine/script.js` (base class with no-op hooks).
+4. Implement `engine/game-object.js`.
+5. Implement `engine/scene.js`.
+6. Implement `engine/game.js`.
+7. Build the proof-of-concept: a colored square that moves with arrow keys. This will require creating the first object type, the first script (input-driven movement), and the first scene, exercising the entire stack end to end.
+8. Produce the first single-file HTML build in `build/` to verify the engine runs in a browser.
 
 ## Open questions
 
-These affect the architecture and need answers before significant code is written:
-
-- Component pattern vs. inheritance for GameObject specialization. Current lean: composition via attachable scripts (per the Godot-inspired design).
-- Input dispatch: directly to the active scene, or via signal bus events. Trade-off is decoupling vs. simplicity.
-- Whether to support multiple simultaneous active scenes (e.g., UI overlaid on gameplay) from day one or defer to a later version.
-- Whether to use `requestAnimationFrame` directly in the Scene class or in a separate `Game` orchestrator class.
-- Coordinate system: top-left origin (Canvas default) or center origin. Default lean: top-left.
+None at the engine-core level. Future-work items (multi-scene, asset loading, audio, save/load, physics, collision) are tracked at the bottom of `docs/ARCHITECTURE.md` and will be addressed with new ADRs when needed.
