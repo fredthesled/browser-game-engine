@@ -51,6 +51,18 @@ When you change code, you also update the matching documentation in the same res
 
 The .md files are authoritative. Code is the implementation of the documented spec. If they disagree, treat the disagreement as a bug to be reconciled, not a normal state.
 
+## Looking up resources
+
+When a task involves third-party assets or libraries (sound effects, sprites, audio playback, networking, collision, etc.), consult `docs/resources/` before researching from scratch:
+
+- `docs/resources/INDEX.md` for a map of the folder.
+- `docs/resources/assets.md` for sources of art, sound, music, and fonts.
+- `docs/resources/libraries.md` for JavaScript libraries we may bundle.
+- `docs/resources/multiplayer.md` for networking architecture and library choices.
+- `docs/resources/attribution.md` for crediting third-party work in games.
+
+If you find or evaluate a resource not yet documented, add it to the relevant file in the same response. The intent is that future sessions never re-research the same ground.
+
 ## Where new things go
 
 - A new reusable GameObject type → `objects/<name>.js` plus registry entry

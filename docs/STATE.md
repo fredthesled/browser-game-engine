@@ -4,15 +4,15 @@ Last updated: 2026-05-05
 
 ## Current status
 
-Engine implemented. Proof-of-concept scene runs. First single-file HTML build exists at `build/poc-square.html`. Verification by the user is the next step.
+Engine implemented and verified. Resource reference documentation in place. Ready to build wrapper scripts and common scenes that integrate the documented tools.
 
 ## What was done in the most recent session
 
-- Implemented all six engine modules under `engine/`: `signal-bus.js` (with global `Engine.signals` instance), `input.js` (`Engine.Input` class; instance is created by Game and assigned to `Engine.input`), `script.js` (base class with no-op hooks), `game-object.js`, `scene.js`, `game.js`.
-- Implemented two scripts under `scripts/`: `RectRenderer` (renders a colored rectangle at host position, configurable size and color), `KeyboardMover` (arrow-key driven motion with diagonal normalization, configurable speed).
-- Implemented one scene under `scenes/`: `POCSquareScene` (a single moveable square at canvas center).
-- Produced the first single-file HTML build at `build/poc-square.html`. The file contains all engine source, the two scripts, the scene, and a small bootstrap snippet. Open it in any browser to verify.
-- Updated `scripts/_registry.md` and `scenes/_registry.md` with the new entries.
+- Verified the POC build runs in the browser. Movement and rendering work as expected.
+- Researched and documented free and freely-licensed resources for game development: assets (sprites, sound, music, fonts), JavaScript libraries (audio, collision, physics, networking, utility), multiplayer architecture options, and attribution practices.
+- Created `docs/resources/` folder with five files: `INDEX.md`, `assets.md`, `libraries.md`, `multiplayer.md`, `attribution.md`.
+- Added ADR-0009 establishing the license policy (prefer CC0/MIT/permissive, accept CC-BY with credit, avoid GPL/NC).
+- Updated `CLAUDE.md` with a "Looking up resources" section so future sessions consult `docs/resources/` before re-researching.
 
 ## Currently in progress
 
@@ -20,18 +20,33 @@ Nothing.
 
 ## Next up
 
-Two natural directions, pick whichever fits the moment:
+The resource research phase is complete. The natural next phase is integration: writing wrapper scripts and common scenes that pull these resources into the framework. Several reasonable starting points:
 
-1. Verify the POC actually works in your browser. Download or open `build/poc-square.html` directly. If anything is broken, report specifics and we fix in the engine source (then regenerate the build).
-2. Once verified, choose the next feature to add. Likely candidates:
-   - A `Collider` script and a registration-based collision system (probably a small change to Scene to maintain a collider list).
-   - A `Sprite` script that renders an `Image`. Will need to think about asset loading.
-   - A small starter game (Pong, Snake, an asteroids clone) under `games/<name>/`.
-   - A `Game.pause()` and `Game.resume()` capability.
+1. **Wrapper scripts that integrate documented libraries**:
+   - `scripts/sfx-player.js` wrapping jsfxr for retro sound effects defined as JSON in source. Smallest first step, no asset files needed.
+   - `scripts/audio-player.js` wrapping Howler.js for actual audio file playback (mp3/ogg/wav).
+   - `scripts/collider.js` providing AABB collision detection with a registration system inside Scene.
+
+2. **Common scenes (the framework's reusable scaffolding)**:
+   - `scenes/loading-scene.js` (base class) for asset preloading screens.
+   - `scenes/main-menu-scene.js` (base class with override hooks).
+   - `scenes/credits-scene.js` consuming the manifest format from `docs/resources/attribution.md`.
+   - `scenes/audio-settings-scene.js` (volume, mute, tied to a settings store).
+   - `scenes/controls-scene.js` showing key bindings.
+
+3. **Common scripts (gameplay primitives)**:
+   - `scripts/sprite-renderer.js` rendering an `Image` instead of a colored rectangle.
+   - `scripts/animation-player.js` for sprite-sheet animation.
+   - `scripts/spawner.js` for enemy or pickup spawning over time.
+   - `scripts/health.js` and `scripts/damage.js` for combat primitives.
+
+4. **First real game**: build `games/pong/` to exercise everything (two scenes, several scripts, AABB collision, jsfxr SFX). Pong is the canonical first-real-game because it touches every subsystem without requiring artwork.
+
+5. **Multiplayer foundation**: integrate PeerJS into the engine via a new `Network` module, then build a multiplayer-capable POC. This is a larger commitment and should follow at least one single-player game so the engine is exercised first.
 
 ## Open questions
 
-None at the engine-core level. The POC verification is the gate before treating the engine as stable.
+None at the engine-core level. License policy is now codified (ADR-0009).
 
 ## Notes for the next session
 
@@ -39,3 +54,4 @@ None at the engine-core level. The POC verification is the gate before treating 
 - The build process is currently manual concatenation in dependency order: engine modules first (in order: signal-bus, input, script, game-object, scene, game), then scripts (any order, since they only depend on Engine.Script and Engine.input), then scenes (after the scripts they reference), then a bootstrap snippet at the end.
 - Each source file begins with a header comment block: what the file does, what it depends on, what depends on it. Match this when adding new files.
 - The build file `build/poc-square.html` carries a notice that it is auto-generated. When source changes, regenerate the build file rather than editing it directly.
+- For any third-party asset or library, consult `docs/resources/` first. Add new findings there in the same session you discover them.

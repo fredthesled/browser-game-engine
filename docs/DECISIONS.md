@@ -119,3 +119,18 @@ Date: 2026-05-05
 - Positive Y means "down" in all engine code, scripts, and game logic.
 - Trigonometry that assumes Y-up needs a sign flip when applied to motion (for example, `dy = -sin(angle) * speed` if you want angle 0 to point right and angle 90 to point up).
 - Documentation and code comments should make Y-down explicit when discussing motion or angles, to avoid silent confusion.
+
+## ADR-0009: License policy for third-party resources
+
+Date: 2026-05-05
+
+**Decision**: Prefer permissive licenses (CC0, public domain, MIT, BSD, ISC, Apache 2.0). CC-BY is acceptable when properly credited. CC-BY-SA is acceptable but commits the project that uses it to also being CC-BY-SA. Avoid GPL for code we bundle and avoid NC (non-commercial) variants.
+
+**Context**: The framework is a long-running template intended to support multiple games over time. Some of those games may eventually be made source-available, shared, or relicensed. License decisions made today constrain those options. A consistent policy means we do not have to re-evaluate the same trade-off per asset.
+
+**Consequences**:
+
+- Every asset and library inclusion requires reading the license. The `docs/resources/` files pre-vet sources for license clarity so the cost of this is amortized.
+- A single CC-BY-SA asset propagates the share-alike requirement to the entire game it appears in. That is acceptable but should be a deliberate choice rather than an accidental one.
+- This policy applies to assets bundled in the build. It does not apply to authoring tools (like BeepBox or jsfxr's web UI) that we use to create content but do not ship.
+- When the license is unclear or the source is anonymous, the safe choice is not to use the asset.
