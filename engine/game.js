@@ -1,6 +1,7 @@
 // engine/game.js
-// Owns the animation loop, the canvas, and the active scene. Constructs the Input singleton.
-// Depends on: Engine.Input (instantiated here), an active scene (held but not imported).
+// Owns the animation loop, the canvas, and the active scene. Constructs the
+// engine-level singletons (Engine.input, Engine.audio).
+// Depends on: Engine.Input and Engine.Audio (instantiated here), an active scene (held but not imported).
 // Used by: top-level bootstrap code in build/ and games/ subfolders.
 
 var Engine = Engine || {};
@@ -18,8 +19,9 @@ class Game {
     this._animationHandle = null;
     this._running = false;
 
-    // Create the Input singleton with this game's canvas reference.
+    // Create the engine singletons.
     Engine.input = new Engine.Input(canvas);
+    Engine.audio = new Engine.Audio();
   }
 
   /** Begin the requestAnimationFrame loop. Idempotent. */

@@ -12,3 +12,4 @@ Each entry includes the script name, the file path, current status, a one-line p
 |--------|------|--------|---------|----------------------|
 | RectRenderer | scripts/rect-renderer.js | Implemented | Draws a filled rectangle centered at the host's position. Configurable width, height, and color. | draw |
 | KeyboardMover | scripts/keyboard-mover.js | Implemented | Moves the host based on arrow keys. Diagonal movement is normalized so diagonal speed equals cardinal speed. | update |
+| Collider | scripts/collider.js | Implemented | AABB collision. Detected pairs invoke onCollide(other) on each. Configurable width, height, tag, and onCollide callback. Detected by Scene via duck-typing on `isCollider`. | (none directly; relies on Scene's collision pass) |
