@@ -1,9 +1,10 @@
 // games/survivors/scripts/player-controller.js
-// Player movement and auto-fire for Survivors.
-// Only fires at enemies within stats.range pixels (range indicator drawn as a
-// subtle circle). Multi-shot fires odd-count fans so a center-aimed shot is
-// always included. Finding the nearest in-range enemy is separated from firing
-// so the fire cooldown only resets when a shot is actually taken.
+// Player movement (WASD/arrows, normalized diagonal) and auto-fire.
+// Only fires at enemies within stats.range (shooting range).
+// Draws two subtle indicator circles:
+//   white  - shooting range (stats.range)
+//   yellow - coin magnet range (stats.magnetRange, hidden if 0)
+// MULTI-SHOT fires an odd-count fan so a center-aimed shot always exists.
 // Depends on: Engine.Script, Engine.input.
 //   SurvivorsProjectile must be defined before this file in the build.
 // Used by: SurvivorsMatchScene.
@@ -37,12 +38,9 @@ class SurvivorsPlayerController extends Engine.Script {
         this._fireAt(target);
         this._fireCooldown = 1 / s.fireRate;
       }
-      // Cooldown is only reset when a shot fires; the player shoots instantly
-      // when an enemy first enters range rather than waiting for the next interval.
     }
   }
 
-  // Returns the nearest enemy within stats.range, or null.
   _nearestInRange() {
     let nearest = null, bestSq = Infinity;
     const rangeSq = this._stats.range * this._stats.range;
@@ -59,7 +57,6 @@ class SurvivorsPlayerController extends Engine.Script {
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.01) return;
     const s = this._stats, count = s.projectileCount;
-    // spread = (count-1)*0.14 ensures symmetric fan with a center shot when count is odd.
     const spread = (count - 1) * 0.14, base = Math.atan2(dy, dx);
     for (let i = 0; i < count; i++) {
       const angle = base + (count > 1 ? -spread / 2 + (spread / (count - 1)) * i : 0);
@@ -72,12 +69,22 @@ class SurvivorsPlayerController extends Engine.Script {
     }
   }
 
-  // Range indicator: subtle circle so the player can see their effective zone.
   draw(ctx) {
+    // Shooting range: white, barely visible.
     ctx.beginPath();
     ctx.arc(0, 0, this._stats.range, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
     ctx.lineWidth   = 1;
     ctx.stroke();
+
+    // Coin magnet range: yellow, barely visible. Hidden when magnetRange is 0.
+    const mr = this._stats.magnetRange || 0;
+    if (mr > 0) {
+      ctx.beginPath();
+      ctx.arc(0, 0, mr, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 220, 0, 0.15)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
   }
 }

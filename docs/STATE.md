@@ -4,23 +4,20 @@ Last updated: 2026-05-07
 
 ## Current status
 
-Survivors v2 committed as `build/survivors.html`. Verified working in browser by user (v1 build). v2 adds coin economy, shop, range system, harder difficulty, and multi-shot fix.
+Survivors v3 committed as `build/survivors.html`. User verified v2 working. v3 adds wave-clear model, fade transitions, coin magnet, and shorter coin lifetime.
 
 ## What was done in the most recent sessions
 
-**Session (2026-05-06, session 1):** Engine audio + collision + jsfxr vendored.
+**Sessions 2026-05-06 and 2026-05-07 (sessions 1-4):** Engine audio/collision, Pong, PauseOverlay, Survivors v1, Survivors v2 (range, coin shop, difficulty). See prior STATE entries for details.
 
-**Session (2026-05-06, session 2, Sonnet 4.6):** Pong built and committed as `build/pong.html`.
-
-**Session (2026-05-07, session 3):** PauseOverlay + Survivors v1 built. Verified working by user.
-
-**Session (2026-05-07, session 4):** Survivors v2:
-- **Range system**: `stats.range = 200` (starting). Player only fires at enemies within range. Range indicator: subtle 10% opacity circle drawn by SurvivorsPlayerController. Range upgradeable in shop (+60 per purchase, base price 18 coins).
-- **Multi-shot fix**: MULTI-SHOT upgrade now adds 2 projectiles (not 1), keeping `projectileCount` odd (1, 3, 5...). Odd counts always produce a center-aimed shot, fixing the previous "even count misses center" problem.
-- **Coin economy**: SurvivorsCoin script (new). Enemies carry `coinValue` (basic 3, swarm 1, tank 8, sine 2). On death, match scene spawns a coin at the enemy's position. Player walks over coins to collect. Coins have a 20-second lifetime (fade out at < 3s). Stats: `coins` carries over between waves; `upgradeLevels: {}` tracks purchase counts for price scaling.
-- **Shop**: SurvivorsShopScene (new) replaces SurvivorsLevelupScene. Shows all 7 upgrades with prices: `basePrice + purchaseCount * priceInc`. Player can buy 0 or more per wave; unspent coins carry over. Includes current stats summary line.
-- **Difficulty**: Spawn interval `max(0.22, 1.5 - (level-1)*0.15)` (was `max(0.38, 2.0 - ...)`). Enemy type pool grows earlier (swarm at 2, sine at 3, tank at 4). Health scales +10% per level, speed +4% per level. Burst spawn at level 5+ (25% chance for second enemy per interval).
-- **New signal**: `survivors_coin_collected { value }` -- subscribed by match scene, adds to stats.coins.
+**Session (2026-05-07, session 5):** Survivors v3:
+- **Wave-clear model**: Spawning stops after 30s (`_spawningDone = true`). Shop transition fires when `_spawningDone && _enemies.length === 0`. HUD swaps countdown for "DEFEAT ALL! (N left)" after timer expires. Player finishes the wave at their own pace.
+- **Fade transitions**: All three match-side scenes now fade in (1.0 black overlay decrementing at 2.5/s on enter) and fade out (0.35s black overlay building before `setScene()`). `_pendingOut` queue pattern: when ready to transition, set `_pendingOut = new NextScene(...)` and let `_fadeOutTimer` tick. Applied to SurvivorsMenuScene, SurvivorsMatchScene, SurvivorsShopScene.
+- **Coin magnet upgrade**: "COIN MAGNET +80px" in shop (basePrice 30, priceInc 22). `stats.magnetRange` starts at 0; each purchase adds 80px. `SurvivorsMatchScene._applyMagnet(dt)` runs after `super.update()`, pulls coins toward player at 220px/s within the magnet radius. Yellow range circle drawn by PlayerController when magnetRange > 0.
+- **Coin lifetime**: Reduced 20s to 10s. Fade formula changed: fully opaque above 3s remaining, eases from 1.0 to 0.5 in last 3s (visible but signals urgency). Previously faded to 0 (invisible before despawn).
+- **PauseOverlay quit action**: Now also triggers fade-out via `_pendingOut` rather than calling setScene directly.
+- **Stats object additions**: `magnetRange: 0` added to initial stats in SurvivorsMenuScene.
+- **Shop**: 8 upgrades now (COIN MAGNET added after RANGE). Stats summary line includes magnet range if > 0.
 
 ## Currently in progress
 
@@ -28,23 +25,21 @@ Nothing.
 
 ## Next up
 
-1. **Browser verification of v2 build**: test coin drops, collection, shop buying, price scaling, range indicator, multi-shot fix.
-2. **Pong pause retrofit**: add PauseOverlay to PongMatchScene, regenerate pong.html.
-3. **Survivors SFX**: once v2 mechanics confirmed, add jsfxr sounds (fire, hit, death, coin pickup, level complete).
-4. **Common scenes**: loading, credits, audio settings base classes.
-5. **Common scripts**: sprite renderer, animation player, health/damage primitives.
-6. **Multiplayer**: PeerJS Network module. Defer until multiple verified games exist.
+1. **Browser verification of v3 build**: test fade transitions, wave-clear model, coin magnet, coin 10s lifetime.
+2. **Pong pause retrofit**: add PauseOverlay + fade to PongMatchScene, regenerate pong.html.
+3. **Survivors SFX**: jsfxr sounds (fire, hit, death, coin pickup, level complete) once v3 verified.
+4. **Common scenes / scripts**: sprite renderer, animation player, health/damage primitives, credits scene.
+5. **Multiplayer**: PeerJS Network module. Deferred until multiple verified games exist.
 
 ## Open questions
 
-- Whether enemy health/speed scaling (+10%/+4% per level) is balanced. May need tuning after play.
-- Coin economy balance: with ~15 basic enemies at 3 coins each per wave, player earns ~45 coins/wave early. First-wave shop has items at 14-45 coins. Should be able to afford 1-2 cheap upgrades. Mid-game: more kills, bigger coin drops, more enemies, so shop becomes more accessible while prices scale too.
-- Whether 20s coin lifetime is long enough. Can extend to 30s or make coins permanent if pickup feels frustrating.
+- Coin magnet pull speed (220px/s) and max range progression (80, 160, 240...) may need tuning after play.
+- Wave-clear timing: with 30s of spawning + cleanup time, total wave duration is longer than before. Adjust WAVE_DURATION if it feels too long.
+- Shop now has 9 rows total (8 upgrades + continue). Layout fits 600px canvas but is dense.
 
 ## Notes for the next session
 
-- Survivors stats fields: `maxHealth`, `currentHealth`, `speed`, `fireRate`, `damage`, `projectileCount`, `projectileSize`, `playerSize`, `canvasW`, `canvasH`, `range`, `coins`, `upgradeLevels`.
-- Build concatenation order for survivors: riffwave, sfxr, engine modules, rect-renderer, collider, pause-overlay, player-controller, projectile, enemy, **coin** (new - must precede match scene), survivors-menu, **survivors-shop** (new - replaces levelup), survivors-match, bootstrap.
-- SurvivorsLevelupScene source still exists at `games/survivors/scenes/survivors-levelup.js` but is NOT included in the build and is marked superseded in the registry.
-- The shop reads `stats.upgradeLevels` (an object, keys are upgrade ids) for price scaling. This is initialized as `{}` in the menu scene's fresh stats.
-- MULTI-SHOT adds 2 per purchase: `projectileCount` goes 1 → 3 → 5 → 7. Spread is 0.14 * (count-1) total, always symmetric with center shot.
+- Stats fields: `maxHealth`, `currentHealth`, `speed`, `fireRate`, `damage`, `projectileCount`, `projectileSize`, `playerSize`, `canvasW`, `canvasH`, `range`, `coins`, `upgradeLevels`, `magnetRange`.
+- Fade pattern (for reference when adding new scenes): `_fadeIn = 1.0` in enter(), decrement `2.5 * dt` in update, draw black overlay at `_fadeIn` alpha. Outgoing: set `_pendingOut = new NextScene(...)` and `_fadeOutTimer = 0`; increment timer in update; call setScene when >= 0.35; draw black overlay at `min(1, _fadeOutTimer / 0.35)` alpha over all content.
+- Wave-clear: `_spawningDone` is false until WAVE_DURATION elapsed, then true. Transition fires when both true + `_enemies.length === 0`. The enemies array is maintained by the `survivors_remove` signal handler (both enemies and coins are removed this way).
+- COIN MAGNET is a match-scene-level mechanic (`_applyMagnet(dt)`), not a new Script. It directly moves coin GameObjects (`obj.x`/`obj.y`) based on proximity to `_playerObj`.

@@ -1,18 +1,17 @@
 // games/survivors/scripts/coin.js
-// Coin dropped by enemies on death. Sits at the drop position until the player
-// walks over it or it expires (20 seconds). Emits survivors_coin_collected when
-// collected and survivors_remove when collected or expired. The AABB is 16x16
-// around an 8x8 visual for forgiving pickup.
+// Coin dropped by enemies on death. Stationary, 10-second lifetime.
+// Fades to half opacity in the last 3 seconds as a pickup warning.
+// 16x16 AABB around 8x8 visual for forgiving collection.
 // ADR-0010 extension contract: isCollider + getAabb + onCollide.
 // Depends on: Engine.Script, Engine.signals.
-// Used by: SurvivorsMatchScene (spawns on enemy death via survivors_enemy_died).
+// Used by: SurvivorsMatchScene (spawns on enemy death).
 
 class SurvivorsCoin extends Engine.Script {
   constructor(host, options = {}) {
     super(host);
-    this.value     = options.value ?? 1;
-    this._lifetime = 20;  // seconds before auto-despawn
-    this._dead     = false;
+    this.value      = options.value ?? 1;
+    this._lifetime  = 10;  // 10 seconds; fades to half at < 3s
+    this._dead      = false;
     this.isCollider = true;
     this.tag        = 'coin';
   }
@@ -41,9 +40,10 @@ class SurvivorsCoin extends Engine.Script {
 
   draw(ctx) {
     if (this._dead) return;
-    // Fade out in the last 3 seconds to warn the player.
+    // Above 3s: fully opaque. Last 3s: eases from 1.0 to 0.5 (stays visible, signals urgency).
+    const alpha = this._lifetime < 3 ? 0.5 + 0.5 * (this._lifetime / 3.0) : 1.0;
     ctx.save();
-    ctx.globalAlpha = Math.min(1.0, this._lifetime / 3.0);
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = '#f1c40f';
     ctx.fillRect(-4, -4, 8, 8);
     ctx.fillStyle = 'rgba(255,255,200,0.55)';

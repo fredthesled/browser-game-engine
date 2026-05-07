@@ -1,17 +1,19 @@
 // games/survivors/scenes/survivors-match.js
-// Core gameplay for Survivors. Owns wave timer, spawner, player, HUD, pause.
-// Transitions to SurvivorsShopScene on wave end, SurvivorsMenuScene on death.
+// Core gameplay scene for Survivors.
 //
-// Difficulty scaling:
-//   Spawn interval: max(0.22, 1.5 - (level-1)*0.15). Floors at ~level 10.
-//   Enemy health:   base * (1 + (level-1)*0.10) per level.
-//   Enemy speed:    base * (1 + (level-1)*0.04) per level.
-//   Type pool grows: swarm at 2, sine at 3, tank at 4.
-//   Burst spawning:  25% chance to spawn a second enemy at level 5+.
+// Wave completion model:
+//   Enemies spawn for WAVE_DURATION seconds, then _spawningDone = true.
+//   The shop transition only fires when _spawningDone && _enemies.length === 0.
+//   This lets the player feel like they finished the wave rather than being cut
+//   off mid-fight at the timer expiry.
 //
-// Coin economy: enemies carry coinValue. On death, a SurvivorsCoin is spawned
-// at the enemy's last position. Player collects coins by walking over them.
-// Uncollected coins are lost when the wave ends.
+// Fade transitions: _fadeIn counts down from 1.0 on enter (black overlay).
+//   _pendingOut holds the queued next scene; a 0.35s fade-to-black runs before
+//   setScene() is called. All transitions (wave complete, death, quit) use this.
+//
+// Coin magnet: _applyMagnet(dt) runs after super.update() each frame. It pulls
+//   any SurvivorsCoin objects within stats.magnetRange toward the player at
+//   220 px/s. No structural change to the coin script required.
 //
 // Signals (all 'survivors_' prefixed):
 //   survivors_remove      { obj }               remove a GameObject
@@ -34,12 +36,13 @@ class SurvivorsMatchScene extends Engine.Scene {
       maxHealth:100, currentHealth:100, speed:180, fireRate:1.5,
       damage:25, projectileCount:1, projectileSize:6,
       playerSize:20, canvasW:800, canvasH:600,
-      range:200, coins:0, upgradeLevels:{},
+      range:200, coins:0, upgradeLevels:{}, magnetRange:0,
     };
     this.WAVE_DURATION  = 30;
     this._playerHealth  = 0;
     this._kills         = 0;
     this._waveTimer     = this.WAVE_DURATION;
+    this._spawningDone  = false;
     this._spawnTimer    = 1.0;
     this._enemies       = [];
     this._playerObj     = null;
@@ -47,10 +50,12 @@ class SurvivorsMatchScene extends Engine.Scene {
     this._deadTimer     = 3.0;
     this._pause         = null;
     this._unsubscribers = [];
+    this._fadeIn        = 1.0;
+    this._pendingOut    = null;
+    this._fadeOutTimer  = 0;
   }
 
   _getSpawnInterval() {
-    // Starts at 1.5s, floors at 0.22s around level 10.
     return Math.max(0.22, 1.5 - (this._level - 1) * 0.15);
   }
 
@@ -65,7 +70,6 @@ class SurvivorsMatchScene extends Engine.Scene {
   }
 
   _getEnemyConfig(type) {
-    // Scale health +10% and speed +4% per level above 1.
     const hm = 1 + (this._level - 1) * 0.10;
     const sm = 1 + (this._level - 1) * 0.04;
     const base = {
@@ -99,21 +103,52 @@ class SurvivorsMatchScene extends Engine.Scene {
     this.add(enemy);
   }
 
+  // Pulls coins within stats.magnetRange toward the player at 220 px/s.
+  _applyMagnet(dt) {
+    const mr = this._stats.magnetRange || 0;
+    if (mr <= 0 || !this._playerObj) return;
+    const px = this._playerObj.x, py = this._playerObj.y;
+    const PULL_SPEED = 220;
+    for (const obj of this.objects) {
+      for (const s of obj.scripts) {
+        if (s.tag === 'coin' && !s._dead) {
+          const dx = px - obj.x, dy = py - obj.y;
+          const distSq = dx * dx + dy * dy;
+          if (distSq < mr * mr && distSq > 1) {
+            const dist = Math.sqrt(distSq);
+            obj.x += (dx / dist) * PULL_SPEED * dt;
+            obj.y += (dy / dist) * PULL_SPEED * dt;
+          }
+        }
+      }
+    }
+  }
+
   enter() {
     this._playerHealth = this._stats.currentHealth;
     this._kills        = 0;
     this._waveTimer    = this.WAVE_DURATION;
+    this._spawningDone = false;
     this._spawnTimer   = 1.0;
     this._enemies      = [];
     this._state        = 'playing';
     this._deadTimer    = 3.0;
+    this._fadeIn       = 1.0;
+    this._pendingOut   = null;
+    this._fadeOutTimer = 0;
+
     const { canvasW, canvasH, playerSize } = this._stats;
     this._playerObj = new Engine.GameObject(canvasW / 2, canvasH / 2);
     this._playerObj.attach(new RectRenderer(this._playerObj, { width:playerSize, height:playerSize, color:'#2ecc71' }));
     this._playerObj.attach(new SurvivorsPlayerController(this._playerObj, { stats:this._stats, scene:this, enemies:this._enemies }));
     this._playerObj.attach(new Collider(this._playerObj, { width:playerSize, height:playerSize, tag:'player' }));
     this.add(this._playerObj);
-    this._pause = new PauseOverlay(this._game, { onQuit: () => this._game.setScene(new SurvivorsMenuScene(this._game)) });
+
+    this._pause = new PauseOverlay(this._game, { onQuit: () => {
+      this._pendingOut   = new SurvivorsMenuScene(this._game);
+      this._fadeOutTimer = 0;
+    }});
+
     this._unsubscribers.push(
       Engine.signals.on('survivors_remove', ({ obj }) => {
         const idx = this._enemies.indexOf(obj); if (idx !== -1) this._enemies.splice(idx, 1);
@@ -145,33 +180,56 @@ class SurvivorsMatchScene extends Engine.Scene {
   }
 
   update(dt) {
+    // Fade-in (visual only, doesn't block logic).
+    if (this._fadeIn > 0) this._fadeIn = Math.max(0, this._fadeIn - dt * 2.5);
+
+    // Fade-out to queued next scene.
+    if (this._pendingOut) {
+      this._fadeOutTimer += dt;
+      if (this._fadeOutTimer >= 0.35) this._game.setScene(this._pendingOut);
+      return;
+    }
+
     this._pause.update(dt);
     if (this._pause.isPaused()) return;
+
     if (this._state === 'dead') {
       this._deadTimer -= dt;
-      if (this._deadTimer <= 0 || Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' '))
-        this._game.setScene(new SurvivorsMenuScene(this._game));
+      if (this._deadTimer <= 0 || Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ')) {
+        this._pendingOut   = new SurvivorsMenuScene(this._game);
+        this._fadeOutTimer = 0;
+      }
       return;
     }
-    this._waveTimer -= dt;
-    if (this._waveTimer <= 0) {
-      this._state = 'levelcomplete';
+
+    // Wave timer: spawn until WAVE_DURATION, then stop.
+    if (!this._spawningDone) {
+      this._waveTimer -= dt;
+      if (this._waveTimer <= 0) {
+        this._waveTimer    = 0;
+        this._spawningDone = true;
+      } else {
+        this._spawnTimer -= dt;
+        if (this._spawnTimer <= 0) {
+          this._spawnEnemy();
+          if (this._level >= 5 && Math.random() < 0.25) this._spawnEnemy();
+          this._spawnTimer = this._getSpawnInterval();
+        }
+      }
+    }
+
+    // Wave complete: all enemies cleared after spawning stopped.
+    if (this._spawningDone && this._enemies.length === 0) {
       this._stats.currentHealth = this._playerHealth;
-      for (const e of [...this._enemies]) this.remove(e);
-      this._enemies.length = 0;
-      this._game.setScene(new SurvivorsShopScene(this._game, {
+      this._pendingOut   = new SurvivorsShopScene(this._game, {
         level: this._level, stats: this._stats, kills: this._kills,
-      }));
+      });
+      this._fadeOutTimer = 0;
       return;
     }
-    this._spawnTimer -= dt;
-    if (this._spawnTimer <= 0) {
-      this._spawnEnemy();
-      // Burst: occasional double-spawn at higher levels.
-      if (this._level >= 5 && Math.random() < 0.25) this._spawnEnemy();
-      this._spawnTimer = this._getSpawnInterval();
-    }
+
     super.update(dt);
+    this._applyMagnet(dt);
   }
 
   _bgColor() {
@@ -184,6 +242,7 @@ class SurvivorsMatchScene extends Engine.Scene {
     ctx.fillStyle = this._bgColor(); ctx.fillRect(0, 0, W, H);
     super.draw(ctx);
     this._drawHUD(ctx);
+
     if (this._state === 'dead') {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
@@ -193,7 +252,20 @@ class SurvivorsMatchScene extends Engine.Scene {
       ctx.fillStyle='#666666'; ctx.font='16px monospace'; ctx.fillText('SPACE or ENTER to continue', W/2, H/2+54);
       ctx.restore();
     }
+
     this._pause.draw(ctx);
+
+    // Fade-in overlay (clears as scene opens)
+    if (this._fadeIn > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${this._fadeIn})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // Fade-out overlay (builds as scene closes)
+    if (this._pendingOut) {
+      const a = Math.min(1, this._fadeOutTimer / 0.35);
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   _drawHUD(ctx) {
@@ -202,9 +274,11 @@ class SurvivorsMatchScene extends Engine.Scene {
     ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, 28);
     ctx.fillStyle = '#dddddd'; ctx.font = '14px monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const timerPart = this._spawningDone
+      ? '   DEFEAT ALL! (' + this._enemies.length + ' left)'
+      : '   ' + Math.ceil(Math.max(0, this._waveTimer)) + 's';
     ctx.fillText(
-      'LEVEL ' + this._level +
-      '   ' + Math.ceil(Math.max(0, this._waveTimer)) + 's' +
+      'LEVEL ' + this._level + timerPart +
       '   KILLS: ' + this._kills +
       '   COINS: ' + (this._stats.coins || 0),
       W / 2, 7

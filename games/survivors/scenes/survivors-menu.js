@@ -1,17 +1,39 @@
 // games/survivors/scenes/survivors-menu.js
 // Title screen for Survivors. Creates fresh stats on each new game.
+// Fades in on enter; fades out before handing off to the match scene.
 // Depends on: Engine.Scene, Engine.input.
 //   SurvivorsMatchScene must be defined in build (transition target).
 // Used by: Survivors bootstrap; SurvivorsMatchScene (back on death/quit).
 
 class SurvivorsMenuScene extends Engine.Scene {
-  constructor(game) { super(); this._game = game; }
-  enter() {}
-  exit()  {}
+  constructor(game) {
+    super();
+    this._game     = game;
+    this._fadeIn   = 1.0;
+    this._pendingOut    = null;
+    this._fadeOutTimer  = 0;
+  }
 
-  update(_dt) {
+  enter() {
+    this._fadeIn        = 1.0;
+    this._pendingOut    = null;
+    this._fadeOutTimer  = 0;
+  }
+  exit() {}
+
+  update(dt) {
+    // Fade-out to next scene takes priority.
+    if (this._pendingOut) {
+      this._fadeOutTimer += dt;
+      if (this._fadeOutTimer >= 0.35) this._game.setScene(this._pendingOut);
+      return;
+    }
+
+    // Fade-in: decrement but don't block input (player may press immediately).
+    if (this._fadeIn > 0) this._fadeIn = Math.max(0, this._fadeIn - dt * 2.5);
+
     if (Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter')) {
-      this._game.setScene(new SurvivorsMatchScene(this._game, {
+      this._pendingOut = new SurvivorsMatchScene(this._game, {
         level: 1,
         stats: {
           maxHealth:      100,
@@ -24,11 +46,12 @@ class SurvivorsMenuScene extends Engine.Scene {
           playerSize:     20,
           canvasW:        800,
           canvasH:        600,
-          range:          200,     // shooting range in pixels
-          coins:          0,       // currency carried across waves
-          upgradeLevels:  {},      // purchase counts per upgrade id (for price scaling)
+          range:          200,
+          coins:          0,
+          upgradeLevels:  {},
+          magnetRange:    0,
         },
-      }));
+      });
     }
   }
 
@@ -47,5 +70,17 @@ class SurvivorsMenuScene extends Engine.Scene {
     ctx.fillText('Collect coins, spend them in the shop', W / 2, H / 2 + 92);
     ctx.fillText('ESC to pause', W / 2, H / 2 + 116);
     ctx.restore();
+
+    // Fade-in overlay
+    if (this._fadeIn > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${this._fadeIn})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // Fade-out overlay
+    if (this._pendingOut) {
+      const a = Math.min(1, this._fadeOutTimer / 0.35);
+      ctx.fillStyle = `rgba(0,0,0,${a})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 }
