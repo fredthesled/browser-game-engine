@@ -1,53 +1,55 @@
 # State
 
-Last updated: 2026-05-06
+Last updated: 2026-05-07
 
 ## Current status
 
-Pong is built as `build/pong.html`. All engine subsystems (audio, collision, signals, input, scene transitions) are exercised by the game for the first time in a complete build. The build has not yet been opened in a browser; verification is the next step.
+Survivors v1 is built and committed as `build/survivors.html`. The PauseOverlay utility is in `scripts/pause-overlay.js`. All source files for both the pause system and the survivors game are committed and documented. The build has not yet been verified in a real browser.
 
 ## What was done in the most recent sessions
 
-**Session (2026-05-06, first session):**
-- Added `engine/audio.js` (Engine.Audio class). Public API: `register(name, paramsOrPreset)`, `play(name)`, `setVolume`, `getVolume`, `setMuted`, `isMuted`. Caches compiled audio buffers; documents browser autoplay caveats. Constructed by `Game` as `Engine.audio`. (Commit `e96f9d5`.)
-- Added `scripts/collider.js` (Collider Script). AABB collision with width/height/tag/onCollide. Duck-typed via `isCollider = true`. Detected pairs invoke `onCollide(other)` directly. (Commit `e96f9d5`.)
-- Updated `engine/scene.js` to run a `_collisionPass()` after the per-object update loop. O(N^2) broad-phase walking every object's scripts. (Commit `e96f9d5`.)
-- Updated `engine/game.js` to instantiate `Engine.audio` alongside `Engine.input`. (Commit `e96f9d5`.)
-- Vendored jsfxr v1.4.0 in `engine/lib/`: `sfxr.js` (35,898 bytes), `riffwave.js` (5,447 bytes), `UNLICENSE` (public domain), `README.md` documenting the source and update procedure. The first commit pass missed `sfxr.js`; this was fixed in `ef223d8`. Both files are now a matched pair from the same upstream npm release. (Commits `e96f9d5` and `ef223d8`.)
-- Updated `scripts/_registry.md` with the new Collider entry.
-- Added ADR-0010 (collision design: duck-typed scripts, method-based response, naive O(N^2) broad-phase).
-- Added ADR-0011 (audio as engine-level service rather than Script).
-- Updated `docs/ARCHITECTURE.md` to reflect the seventh engine module (Audio), the Scene collision pass, the updated frame lifecycle, the build concatenation order, and the third-party vendored library convention.
+**Session (2026-05-06, session 1):**
+- Added `engine/audio.js`, `scripts/collider.js`, vendored jsfxr. See commit `e96f9d5`.
 
-**Session (2026-05-06, second session, Sonnet 4.6):**
-- Built `games/pong/` with three game-specific scripts (`PongBall`, `PongPaddlePlayer`, `PongAI`) and two scenes (`PongMenuScene`, `PongMatchScene`).
-- `PongBall` uses the ADR-0010 extension contract: sets `isCollider = true` and implements `getAabb()` + `onCollide()` directly, without a separate Collider attachment. Includes a `_collideCooldown` guard to prevent multi-fire on sustained overlap. Emits `ball_scored` signal with `{ side: 'left' | 'right' }` payload.
-- `PongMatchScene` subscribes to `ball_scored`, updates score, checks win condition, unsubscribes on `exit()` to prevent ghost listeners.
-- `build/pong.html` generated as a complete single-file build. First build to include `engine/audio.js` and vendored jsfxr libs.
-- `scripts/_registry.md` and `scenes/_registry.md` updated with all pong entries.
+**Session (2026-05-06, session 2, Sonnet 4.6 -- Pong):**
+- Built Pong: `games/pong/` with all scripts and scenes. `build/pong.html` committed.
+
+**Session (2026-05-07, session 3 -- Pause + Survivors):**
+- Added `scripts/pause-overlay.js` (`PauseOverlay` utility class). ADR-0012 documents the pause convention.
+- Built `games/survivors/`: three scripts (`SurvivorsPlayerController`, `SurvivorsProjectile`, `SurvivorsEnemy`) and three scenes (`SurvivorsMenuScene`, `SurvivorsLevelupScene`, `SurvivorsMatchScene`).
+- Generated `build/survivors.html` (single-file build).
+- Updated `scripts/_registry.md`, `scenes/_registry.md`, `docs/DECISIONS.md`.
 
 ## Currently in progress
 
-Nothing. Pong is committed; browser verification is next.
+Nothing.
 
 ## Next up
 
-1. **Browser verification of `build/pong.html`**: open in a real browser and confirm audio, collision, scoring, and scene transitions all function. The `_collideCooldown` approach to multi-fire prevention is an assumption; if it causes issues (e.g., ball sticking to paddle), switching to per-pair entry tracking inside `_collisionPass()` is the next step.
-2. **`scripts/audio-player.js`** wrapping Howler.js for file-backed audio (mp3/ogg/wav). Lower priority while jsfxr covers all current game needs.
-3. **Common scenes** (loading, main menu base class, credits, audio settings, controls) as reusable scaffolding for future games.
-4. **Common scripts** (sprite renderer, animation player, spawner, health, damage).
-5. **Multiplayer foundation**: PeerJS-backed Network module, deferred until at least one single-player game is verified working.
+1. **Browser verification of `build/survivors.html`**: open in a real browser. Key things to check: ESC pause (audio controls, quit-to-menu), enemy spawning + collision, projectile firing + enemy death, wave timer and level-up screen, damage scaling across levels.
+2. **Pong retrofit**: add `PauseOverlay` to `PongMatchScene` per ADR-0012, regenerate `build/pong.html`. The source file and build are currently inconsistent with the convention.
+3. **Survivors SFX**: now that mechanics are verified, add jsfxr-based sounds (fire, enemy hit, enemy die, player hit, level complete) registered in `SurvivorsMenuScene.enter()`.
+4. **Difficulty tuning**: after real play, adjust `WAVE_DURATION`, spawn intervals, and enemy stat configs. Constants are all centralized in `SurvivorsMatchScene`.
+5. **Common scenes**: loading, main menu base class, credits, audio settings, controls screens as reusable framework scaffolding.
+6. **Common scripts**: sprite renderer, animation player, spawner, health/damage primitives.
+7. **Multiplayer foundation**: PeerJS-backed Network module. Defer until at least one game is fully verified.
 
 ## Open questions
 
-- Whether `build/pong.html` behaves correctly in a real browser. Audio and frame-accurate collision are exercised for the first time. If the cooldown guard is insufficient for multi-fire prevention, per-pair entry/exit tracking in `_collisionPass()` is the next iteration.
-- AI difficulty: AI speed is 250 px/s vs player 340 px/s. Tuning may be needed after play-testing.
+- Whether the projectile-enemy collision ordering assumption holds in the browser (enemies inserted before projectiles in `this.objects`). If sticking or missed hits are observed, switch to per-pair entry tracking in `_collisionPass()`.
+- Survivors difficulty curve: spawn interval floor (0.38s at level 15+), enemy type introduction thresholds, and base stats are all first guesses. Play-testing required.
+- AI difficulty in Pong (250 vs 340 px/s) -- unverified since pong.html predates browser testing.
 
 ## Notes for the next session
 
-- Pong source files are in `games/pong/scripts/` and `games/pong/scenes/`.
-- The `ball_scored` signal payload is `{ side: 'left' | 'right' }`. `PongMatchScene` subscribes in `enter()` and unsubscribes in `exit()`.
-- `build/pong.html` inlines libs in the documented concatenation order. If regenerating, follow ARCHITECTURE.md exactly.
-- Speed constants are in `PongMatchScene`: `BALL_SPEED = 280`, `PLAYER_SPEED = 340`, `AI_SPEED = 250`. Adjust all three there for difficulty tuning without touching script files.
-- `PongMenuScene` registers SFX on every `enter()`, so sounds are re-randomized each session (jsfxr presets produce different results each call). This is intentional for variety.
-- The engine namespace is unchanged: `Engine.SignalBus`, `Engine.signals`, `Engine.Input`, `Engine.input`, `Engine.Script`, `Engine.GameObject`, `Engine.Scene`, `Engine.Audio`, `Engine.audio`, `Engine.Game`.
+- Survivors stats object fields: `maxHealth`, `currentHealth`, `speed`, `fireRate`, `damage`, `projectileCount`, `projectileSize`, `playerSize`, `canvasW`, `canvasH`. The object is shared by reference across Match and Levelup scenes; mutations in Levelup persist to the next Match.
+- Survivors signals: `survivors_remove { obj }`, `survivors_enemy_died { obj, xp }`, `survivors_player_hit { damage }`. All prefixed to avoid cross-game collisions on the shared SignalBus.
+- Enemy type configs are in `SurvivorsMatchScene._getEnemyConfig()`. Type pool weighting is in `_getEnemyTypePool()`. Both are the right place for difficulty tuning.
+- PauseOverlay usage pattern (mandatory for all new game scenes per ADR-0012):
+  ```
+  enter(): this._pause = new PauseOverlay(game, { onQuit: ... });
+  update(dt): this._pause.update(dt); if (this._pause.isPaused()) return;
+  draw(ctx): /* game content */ this._pause.draw(ctx); // last
+  ```
+- Pong source at `games/pong/`. The build at `build/pong.html` predates PauseOverlay and should be regenerated next session.
+- `PauseOverlay` note: it is a plain class, not a Script subclass. `scripts/pause-overlay.js` is an exception to the normal folder convention.
