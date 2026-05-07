@@ -9,5 +9,7 @@ Each entry includes the scene name, the file path, current status, a one-line pu
 ## Entries
 
 | Scene | File | Status | Purpose | Dependencies |
-|-------|------|--------|---------|--------------|
+|-------|------|--------|---------|-------------|
 | POCSquareScene | scenes/poc-square.js | Implemented | Proof-of-concept scene with a single arrow-key-controlled square. Verifies the engine end to end. | RectRenderer, KeyboardMover |
+| PongMenuScene | games/pong/scenes/pong-menu.js | Implemented | Title and start screen for Pong. Registers SFX and waits for Space/Enter to begin match. | (none; no GameObjects) |
+| PongMatchScene | games/pong/scenes/pong-match.js | Implemented | Core Pong match: paddles, ball, scoring via ball_scored signal, win detection, transition back to menu. | RectRenderer, Collider, PongBall, PongPaddlePlayer, PongAI |
