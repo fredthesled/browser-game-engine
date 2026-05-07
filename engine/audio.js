@@ -1,7 +1,7 @@
 // engine/audio.js
 // Wraps jsfxr to provide a register/play API for retro sound effects.
 // Sounds live as parameter objects (JSON), no asset files needed.
-// Depends on: jsfxr (loaded from engine/lib/jsfxr.js, which depends on RIFFWAVE
+// Depends on: jsfxr (loaded from engine/lib/sfxr.js, which depends on RIFFWAVE
 // from engine/lib/riffwave.js). All three must be concatenated before this file.
 // Used by: scripts and scenes that want to play SFX. The Game class
 // constructs the singleton instance and assigns it to Engine.audio.
@@ -11,10 +11,19 @@
 // audio for the rest of the session. Calling play() before any user gesture
 // may produce no sound, depending on the browser; it is a silent no-op rather
 // than an error.
+//
+// Naming note: the class is declared as EngineAudio rather than Audio to avoid
+// shadowing the global window.Audio (HTMLAudioElement) inside concatenated
+// build files. The public name on the engine namespace is still Engine.Audio.
+// This matters because jsfxr's internal AudioContext-unavailable fallback uses
+// `new Audio()` as a bare-name reference, which in classic-script context
+// resolves to whichever `Audio` was declared most recently in the global
+// lexical environment. Naming the class EngineAudio leaves window.Audio
+// unshadowed for that fallback path.
 
 var Engine = Engine || {};
 
-class Audio {
+class EngineAudio {
   constructor() {
     this._sounds = new Map();   // name -> jsfxr params object
     this._cache = new Map();    // name -> cached audio object (compiled once, played many times)
@@ -76,4 +85,4 @@ class Audio {
   }
 }
 
-Engine.Audio = Audio;
+Engine.Audio = EngineAudio;
