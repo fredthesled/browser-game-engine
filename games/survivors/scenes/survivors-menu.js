@@ -14,10 +14,19 @@ class SurvivorsMenuScene extends Engine.Scene {
       this._game.setScene(new SurvivorsMatchScene(this._game, {
         level: 1,
         stats: {
-          maxHealth: 100, currentHealth: 100,
-          speed: 180,     fireRate: 1.5,
-          damage: 25,     projectileCount: 1, projectileSize: 6,
-          playerSize: 20, canvasW: 800,       canvasH: 600,
+          maxHealth:      100,
+          currentHealth:  100,
+          speed:          180,
+          fireRate:       1.5,
+          damage:         25,
+          projectileCount:1,
+          projectileSize: 6,
+          playerSize:     20,
+          canvasW:        800,
+          canvasH:        600,
+          range:          200,     // shooting range in pixels
+          coins:          0,       // currency carried across waves
+          upgradeLevels:  {},      // purchase counts per upgrade id (for price scaling)
         },
       }));
     }
@@ -34,8 +43,8 @@ class SurvivorsMenuScene extends Engine.Scene {
     ctx.fillText('PRESS SPACE OR ENTER TO PLAY', W / 2, H / 2 - 10);
     ctx.fillStyle = '#666666'; ctx.font = '15px monospace';
     ctx.fillText('WASD or ARROW KEYS to move', W / 2, H / 2 + 44);
-    ctx.fillText('Auto-shoots nearest enemy', W / 2, H / 2 + 68);
-    ctx.fillText('Survive 30-second waves to level up', W / 2, H / 2 + 92);
+    ctx.fillText('Auto-shoots enemies within range', W / 2, H / 2 + 68);
+    ctx.fillText('Collect coins, spend them in the shop', W / 2, H / 2 + 92);
     ctx.fillText('ESC to pause', W / 2, H / 2 + 116);
     ctx.restore();
   }

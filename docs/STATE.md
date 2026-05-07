@@ -4,21 +4,23 @@ Last updated: 2026-05-07
 
 ## Current status
 
-Survivors v1 is built and committed as `build/survivors.html`. The PauseOverlay utility is in `scripts/pause-overlay.js`. All source files for both the pause system and the survivors game are committed and documented. The build has not yet been verified in a real browser.
+Survivors v2 committed as `build/survivors.html`. Verified working in browser by user (v1 build). v2 adds coin economy, shop, range system, harder difficulty, and multi-shot fix.
 
 ## What was done in the most recent sessions
 
-**Session (2026-05-06, session 1):**
-- Added `engine/audio.js`, `scripts/collider.js`, vendored jsfxr. See commit `e96f9d5`.
+**Session (2026-05-06, session 1):** Engine audio + collision + jsfxr vendored.
 
-**Session (2026-05-06, session 2, Sonnet 4.6 -- Pong):**
-- Built Pong: `games/pong/` with all scripts and scenes. `build/pong.html` committed.
+**Session (2026-05-06, session 2, Sonnet 4.6):** Pong built and committed as `build/pong.html`.
 
-**Session (2026-05-07, session 3 -- Pause + Survivors):**
-- Added `scripts/pause-overlay.js` (`PauseOverlay` utility class). ADR-0012 documents the pause convention.
-- Built `games/survivors/`: three scripts (`SurvivorsPlayerController`, `SurvivorsProjectile`, `SurvivorsEnemy`) and three scenes (`SurvivorsMenuScene`, `SurvivorsLevelupScene`, `SurvivorsMatchScene`).
-- Generated `build/survivors.html` (single-file build).
-- Updated `scripts/_registry.md`, `scenes/_registry.md`, `docs/DECISIONS.md`.
+**Session (2026-05-07, session 3):** PauseOverlay + Survivors v1 built. Verified working by user.
+
+**Session (2026-05-07, session 4):** Survivors v2:
+- **Range system**: `stats.range = 200` (starting). Player only fires at enemies within range. Range indicator: subtle 10% opacity circle drawn by SurvivorsPlayerController. Range upgradeable in shop (+60 per purchase, base price 18 coins).
+- **Multi-shot fix**: MULTI-SHOT upgrade now adds 2 projectiles (not 1), keeping `projectileCount` odd (1, 3, 5...). Odd counts always produce a center-aimed shot, fixing the previous "even count misses center" problem.
+- **Coin economy**: SurvivorsCoin script (new). Enemies carry `coinValue` (basic 3, swarm 1, tank 8, sine 2). On death, match scene spawns a coin at the enemy's position. Player walks over coins to collect. Coins have a 20-second lifetime (fade out at < 3s). Stats: `coins` carries over between waves; `upgradeLevels: {}` tracks purchase counts for price scaling.
+- **Shop**: SurvivorsShopScene (new) replaces SurvivorsLevelupScene. Shows all 7 upgrades with prices: `basePrice + purchaseCount * priceInc`. Player can buy 0 or more per wave; unspent coins carry over. Includes current stats summary line.
+- **Difficulty**: Spawn interval `max(0.22, 1.5 - (level-1)*0.15)` (was `max(0.38, 2.0 - ...)`). Enemy type pool grows earlier (swarm at 2, sine at 3, tank at 4). Health scales +10% per level, speed +4% per level. Burst spawn at level 5+ (25% chance for second enemy per interval).
+- **New signal**: `survivors_coin_collected { value }` -- subscribed by match scene, adds to stats.coins.
 
 ## Currently in progress
 
@@ -26,30 +28,23 @@ Nothing.
 
 ## Next up
 
-1. **Browser verification of `build/survivors.html`**: open in a real browser. Key things to check: ESC pause (audio controls, quit-to-menu), enemy spawning + collision, projectile firing + enemy death, wave timer and level-up screen, damage scaling across levels.
-2. **Pong retrofit**: add `PauseOverlay` to `PongMatchScene` per ADR-0012, regenerate `build/pong.html`. The source file and build are currently inconsistent with the convention.
-3. **Survivors SFX**: now that mechanics are verified, add jsfxr-based sounds (fire, enemy hit, enemy die, player hit, level complete) registered in `SurvivorsMenuScene.enter()`.
-4. **Difficulty tuning**: after real play, adjust `WAVE_DURATION`, spawn intervals, and enemy stat configs. Constants are all centralized in `SurvivorsMatchScene`.
-5. **Common scenes**: loading, main menu base class, credits, audio settings, controls screens as reusable framework scaffolding.
-6. **Common scripts**: sprite renderer, animation player, spawner, health/damage primitives.
-7. **Multiplayer foundation**: PeerJS-backed Network module. Defer until at least one game is fully verified.
+1. **Browser verification of v2 build**: test coin drops, collection, shop buying, price scaling, range indicator, multi-shot fix.
+2. **Pong pause retrofit**: add PauseOverlay to PongMatchScene, regenerate pong.html.
+3. **Survivors SFX**: once v2 mechanics confirmed, add jsfxr sounds (fire, hit, death, coin pickup, level complete).
+4. **Common scenes**: loading, credits, audio settings base classes.
+5. **Common scripts**: sprite renderer, animation player, health/damage primitives.
+6. **Multiplayer**: PeerJS Network module. Defer until multiple verified games exist.
 
 ## Open questions
 
-- Whether the projectile-enemy collision ordering assumption holds in the browser (enemies inserted before projectiles in `this.objects`). If sticking or missed hits are observed, switch to per-pair entry tracking in `_collisionPass()`.
-- Survivors difficulty curve: spawn interval floor (0.38s at level 15+), enemy type introduction thresholds, and base stats are all first guesses. Play-testing required.
-- AI difficulty in Pong (250 vs 340 px/s) -- unverified since pong.html predates browser testing.
+- Whether enemy health/speed scaling (+10%/+4% per level) is balanced. May need tuning after play.
+- Coin economy balance: with ~15 basic enemies at 3 coins each per wave, player earns ~45 coins/wave early. First-wave shop has items at 14-45 coins. Should be able to afford 1-2 cheap upgrades. Mid-game: more kills, bigger coin drops, more enemies, so shop becomes more accessible while prices scale too.
+- Whether 20s coin lifetime is long enough. Can extend to 30s or make coins permanent if pickup feels frustrating.
 
 ## Notes for the next session
 
-- Survivors stats object fields: `maxHealth`, `currentHealth`, `speed`, `fireRate`, `damage`, `projectileCount`, `projectileSize`, `playerSize`, `canvasW`, `canvasH`. The object is shared by reference across Match and Levelup scenes; mutations in Levelup persist to the next Match.
-- Survivors signals: `survivors_remove { obj }`, `survivors_enemy_died { obj, xp }`, `survivors_player_hit { damage }`. All prefixed to avoid cross-game collisions on the shared SignalBus.
-- Enemy type configs are in `SurvivorsMatchScene._getEnemyConfig()`. Type pool weighting is in `_getEnemyTypePool()`. Both are the right place for difficulty tuning.
-- PauseOverlay usage pattern (mandatory for all new game scenes per ADR-0012):
-  ```
-  enter(): this._pause = new PauseOverlay(game, { onQuit: ... });
-  update(dt): this._pause.update(dt); if (this._pause.isPaused()) return;
-  draw(ctx): /* game content */ this._pause.draw(ctx); // last
-  ```
-- Pong source at `games/pong/`. The build at `build/pong.html` predates PauseOverlay and should be regenerated next session.
-- `PauseOverlay` note: it is a plain class, not a Script subclass. `scripts/pause-overlay.js` is an exception to the normal folder convention.
+- Survivors stats fields: `maxHealth`, `currentHealth`, `speed`, `fireRate`, `damage`, `projectileCount`, `projectileSize`, `playerSize`, `canvasW`, `canvasH`, `range`, `coins`, `upgradeLevels`.
+- Build concatenation order for survivors: riffwave, sfxr, engine modules, rect-renderer, collider, pause-overlay, player-controller, projectile, enemy, **coin** (new - must precede match scene), survivors-menu, **survivors-shop** (new - replaces levelup), survivors-match, bootstrap.
+- SurvivorsLevelupScene source still exists at `games/survivors/scenes/survivors-levelup.js` but is NOT included in the build and is marked superseded in the registry.
+- The shop reads `stats.upgradeLevels` (an object, keys are upgrade ids) for price scaling. This is initialized as `{}` in the menu scene's fresh stats.
+- MULTI-SHOT adds 2 per purchase: `projectileCount` goes 1 → 3 → 5 → 7. Spread is 0.14 * (count-1) total, always symmetric with center shot.

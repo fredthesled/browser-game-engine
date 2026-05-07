@@ -1,17 +1,11 @@
 // games/survivors/scripts/projectile.js
-// Single projectile fired by the player. Moves linearly, handles enemy damage
-// in onCollide (order-independent -- see note below), despawns off-screen or
-// on impact. ADR-0010 extension contract: isCollider + getAabb + onCollide.
-//
-// Collision ordering note: projectiles are added AFTER enemies in this.objects
-// each frame, so enemies are indexed before projectiles in _collisionPass().
-// To be safe regardless of ordering, ALL damage logic lives here (the
-// projectile side). If damage were in the enemy's onCollide instead, it could
-// be skipped when the projectile is indexed first and marks itself dead before
-// the enemy runs.
-//
+// Projectile for Survivors. Handles all enemy damage in onCollide (order-
+// independent design -- see file header of the previous version for the
+// ordering rationale). Now also passes coinValue through survivors_enemy_died
+// so the match scene can spawn a coin at the enemy's last position.
+// ADR-0010 extension contract: isCollider + getAabb + onCollide.
 // Depends on: Engine.Script, Engine.signals.
-// Used by: SurvivorsPlayerController (spawns), SurvivorsMatchScene (removes via signal).
+// Used by: SurvivorsPlayerController (spawns), SurvivorsMatchScene (removes).
 
 class SurvivorsProjectile extends Engine.Script {
   constructor(host, options = {}) {
@@ -38,8 +32,12 @@ class SurvivorsProjectile extends Engine.Script {
     other.health -= this.damage;
     if (other.health <= 0) {
       other._dead = true;
-      Engine.signals.emit('survivors_enemy_died', { obj: other.host, xp: other.xp });
-      Engine.signals.emit('survivors_remove',     { obj: other.host });
+      Engine.signals.emit('survivors_enemy_died', {
+        obj:       other.host,
+        xp:        other.xp,
+        coinValue: other.coinValue ?? 0,
+      });
+      Engine.signals.emit('survivors_remove', { obj: other.host });
     }
     Engine.signals.emit('survivors_remove', { obj: this.host });
   }

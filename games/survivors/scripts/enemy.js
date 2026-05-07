@@ -1,22 +1,23 @@
 // games/survivors/scripts/enemy.js
 // Enemy for Survivors. Approaches player via 'straight' or 'sine' pattern.
-// Tags itself 'enemy' for the collision contract. Emits survivors_player_hit
-// on player contact (rate-limited). Projectile damage is handled entirely in
-// SurvivorsProjectile.onCollide -- not here -- see projectile.js for rationale.
+// Carries a coinValue that the projectile includes in survivors_enemy_died so
+// the match scene can drop a coin at the death position.
+// Damage from projectiles is handled entirely in SurvivorsProjectile.onCollide.
 // Depends on: Engine.Script, Engine.signals.
 // Used by: SurvivorsMatchScene.
 
 class SurvivorsEnemy extends Engine.Script {
   constructor(host, options = {}) {
     super(host);
-    this.speed     = options.speed     ?? 80;
-    this.maxHealth = options.maxHealth ?? 40;
-    this.health    = this.maxHealth;
-    this.damage    = options.damage    ?? 10;
-    this.size      = options.size      ?? 18;
-    this.color     = options.color     ?? '#e74c3c';
-    this.xp        = options.xp        ?? 1;
-    this.pattern   = options.pattern   ?? 'straight';
+    this.speed      = options.speed      ?? 80;
+    this.maxHealth  = options.maxHealth  ?? 40;
+    this.health     = this.maxHealth;
+    this.damage     = options.damage     ?? 10;
+    this.size       = options.size       ?? 18;
+    this.color      = options.color      ?? '#e74c3c';
+    this.xp         = options.xp         ?? 1;
+    this.coinValue  = options.coinValue  ?? 3;   // coins dropped on death
+    this.pattern    = options.pattern    ?? 'straight';
     this._player         = options.player ?? null;
     this._sinePhase      = 0;
     this._damageCooldown = 0;
@@ -48,8 +49,7 @@ class SurvivorsEnemy extends Engine.Script {
     let nx = dx / len, ny = dy / len;
     if (this.pattern === 'sine') {
       this._sinePhase += dt * 3.5;
-      const px = -ny, py = nx;
-      const amp = Math.sin(this._sinePhase) * 0.65;
+      const px = -ny, py = nx, amp = Math.sin(this._sinePhase) * 0.65;
       nx += px * amp; ny += py * amp;
       const l2 = Math.sqrt(nx * nx + ny * ny);
       if (l2 > 0.001) { nx /= l2; ny /= l2; }
