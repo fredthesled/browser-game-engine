@@ -134,3 +134,63 @@ Date: 2026-05-05
 - A single CC-BY-SA asset propagates the share-alike requirement to the entire game it appears in. That is acceptable but should be a deliberate choice rather than an accidental one.
 - This policy applies to assets bundled in the build. It does not apply to authoring tools (like BeepBox or jsfxr's web UI) that we use to create content but do not ship.
 - When the license is unclear or the source is anonymous, the safe choice is not to use the asset.
+
+## ADR-0010: AABB collision via duck-typed Collider scripts with method-based response
+
+Date: 2026-05-06
+
+**Decision**: Collision detection lives in `scripts/collider.js` as a `Collider` Script. Scenes locate Colliders by duck-typing on the boolean marker `script.isCollider` rather than using `instanceof`. Detected pairs invoke `a.onCollide(b)` and `b.onCollide(a)` directly each frame, rather than emitting collision events through the SignalBus. The broad-phase is naive O(N²) iteration.
+
+**Context**: The plan recorded in earlier session notes was to emit collision pairs through the SignalBus. Several alternatives were weighed during implementation:
+
+1. Direct `instanceof Collider` checks in Scene.
+2. Duck-typing on a marker like `script.isCollider`.
+3. Explicit registration in a Scene-side collider list, populated by the Collider script's `on_enter` and cleared by `on_exit`.
+4. SignalBus events of the form `collision_started({ a, b })`, `collision_ended({ a, b })`.
+
+Duck-typing was preferred over `instanceof` because the engine code in `engine/scene.js` does not import or otherwise know about the `Collider` class (which lives in `scripts/`); requiring it would introduce an upward dependency from the engine module to the scripts folder. The marker is a single boolean property, costs almost nothing, and lets future Collider variants (CircleCollider, PolygonCollider) share the same Scene contract by setting the same flag.
+
+Explicit registration via `on_enter`/`on_exit` was rejected for the initial version because it adds bookkeeping (the Scene must maintain a separate list of colliders, kept in sync as objects are added or removed) that O(N²) iteration over the existing object list does not need. Registration is a future optimization once colliders are common enough to dominate the per-frame cost.
+
+Direct method calls (`a.onCollide(b)`) were preferred over SignalBus events for collision response because:
+
+- Collisions are inherently pairwise and local to the two objects involved. A signal subscription model would force every collider to filter incoming events to find collisions involving itself, which is wasteful and verbose.
+- The SignalBus is for events that should fan out to unrelated systems (HUD, score, audio). Collision response is rarely fan-out work; it is the affected objects updating their own state.
+- A `Collider` subclass overriding `onCollide` (or passing an `onCollide` callback in options) reads more naturally than `Engine.signals.on('collision', ev => ev.a === this || ev.b === this ? ... : ...)`.
+- When a collision **does** need to fan out (e.g., "play a sound"), the script's `onCollide` handler can emit a signal of its own, e.g. `Engine.signals.emit('hit', { other })`. This composes cleanly: signals are still available for the cases that actually need them.
+
+O(N²) broad-phase was chosen because all anticipated games for the foreseeable future have N < 20 colliders. At N = 20, that is 190 pairs per frame, well under any modern browser's per-frame budget. When this budget is approached, spatial partitioning (uniform grid, quadtree) can replace the loop without changing the Collider script's API.
+
+**Consequences**:
+
+- `engine/scene.js` runs `_collisionPass()` after the per-object update loop and before draw. The pass walks every object's scripts looking for `isCollider`-marked instances, builds a list, and pairwise-tests their AABBs.
+- A Collider's AABB is computed on the fly via `getAabb()` on each pass, so moving a collider just means moving its host's `x` and `y`; nothing else needs to be invalidated.
+- The order of `onCollide` calls within a frame is deterministic (insertion order of the colliders, then alphabetical pair order). Game code should not rely on this ordering for correctness, but it is reproducible for debugging.
+- Collisions fire every frame the boxes overlap, not just on entry. If a game needs "on entry" semantics, the Collider's `onCollide` handler should track previously-touching peers and dedupe. A future enhancement could move this dedupe into Scene as `onCollisionEnter`/`onCollisionExit` if it becomes a recurring need.
+- Scripts other than Collider may also set `isCollider = true` and implement `getAabb()` and `onCollide()` to participate in collision. This is intentional: the Scene's collision pass treats the marker as a contract, not as a class identity.
+- The naive broad-phase is documented as a known scaling cliff. Replacing it is recorded in `engine/scene.js` as a comment and is not blocked by any other decision in this ADR.
+
+## ADR-0011: Audio as engine-level service, not a Script
+
+Date: 2026-05-06
+
+**Decision**: Audio playback is provided by the `Engine.Audio` class in `engine/audio.js` as an engine module, instantiated as a singleton at `Engine.audio` by the `Game` constructor (alongside `Engine.input`). It is **not** a Script attached to a GameObject.
+
+**Context**: The earlier plan called for `scripts/sfx-player.js`, treating audio playback as an attachable behavior. During implementation it became clear that audio is an engine-level service, structurally identical to Input:
+
+- Audio has no per-host meaning. There is no GameObject whose audio output is being modeled by the script. Every GameObject that wants to play a sound is just calling into a global capability.
+- Sound libraries live in a single namespace, not per-host. Multiple GameObjects can register sounds, but they all live in one shared dictionary; there is no notion of "this GameObject's sounds" as a distinct concept.
+- Volume and mute are global controls, not per-host.
+- Caching of compiled audio buffers belongs on the audio system, not on individual hosts.
+
+Forcing audio into the Script abstraction would have required either (a) attaching the SFX player to one designated "manager" GameObject and routing every play call through `manager.scripts.find(s => s instanceof SfxPlayer).play(name)`, which is awkward, or (b) attaching a duplicate SfxPlayer to every host that needed sound, which is wasteful. The Input module avoided this by being an engine module from the start; audio follows the same pattern.
+
+**Consequences**:
+
+- `engine/audio.js` defines `Engine.Audio` (the class) and the `Game` constructor instantiates `Engine.audio = new Engine.Audio()` alongside `Engine.input = new Engine.Input(canvas)`. The pattern is uniform across both global services.
+- The build concatenation order requires `engine/lib/riffwave.js` and `engine/lib/sfxr.js` (the vendored jsfxr library) before `engine/audio.js`, and `engine/audio.js` before `engine/game.js` (which instantiates `Engine.Audio` in its constructor body).
+- Public API on `Engine.audio`: `register(name, paramsOrPreset)`, `play(name)`, `setVolume(v)`, `getVolume()`, `setMuted(bool)`, `isMuted()`. Sounds are registered up front (in a scene's `enter()` or in the bootstrap) and played by name.
+- Game code calls `Engine.audio.play('hit')` directly. This stays consistent with the way Input is used (`Engine.input.isDown('ArrowLeft')`).
+- Browser autoplay policy: AudioContext may start in the suspended state until a user gesture. The first `play()` call inside or shortly after a user gesture (keydown, mousedown) unlocks audio for the rest of the session. Calls before any gesture are silent no-ops in some browsers. This is an upstream browser behavior, not something the wrapper attempts to mask. If a future game needs guaranteed first-frame audio, an explicit `Engine.audio.unlock()` method can be added that resumes the context inside a known user-gesture handler.
+- jsfxr internally accumulates a `channels` array on each cached audio object that grows on every `play()` call. This is a slow memory leak inherent to the upstream library. For our hobby-scale games (thousands of plays per session, not millions), it does not matter. If a future long-running game encounters this, the wrapper can manage its own BufferSource objects rather than relying on jsfxr's `play()` method, or periodically rebuild the cached audio.
+- The `audio-player.js` Script wrapping Howler.js (in the original plan) is still appropriate: Howler is for file-backed audio playback (mp3/ogg/wav), where there **is** a per-host concept (a positional sound emitter, a music track owned by a level scene, etc.). When audio-player lands, it will live in `scripts/` precisely because the per-host concept is real for it. The two wrappers do not duplicate functionality: `Engine.audio` is for procedural SFX defined as JSON in source, the future `audio-player.js` is for sound files.
