@@ -14,6 +14,7 @@ Authoritative list of all attachable behavior scripts in this repo. When you cre
 | KeyboardMover | scripts/keyboard-mover.js | Implemented | Moves host based on arrow keys. Normalized diagonal. | update |
 | Collider | scripts/collider.js | Implemented | AABB collision via ADR-0010 duck-type contract. | (relies on Scene collision pass) |
 | PauseOverlay | scripts/pause-overlay.js | Implemented | Utility (not Script subclass). ESC pause with volume/mute controls and optional quit. | (plain class: toggle, isPaused, update, draw) |
+| SpriteSheet | scripts/sprite-sheet.js | Implemented | Sprite sheet animation player. Loads image by data URI, cuts frames by (col,row), manages named animation states with fps and loop control. Module-level image cache. API: play(name,force), isDone(), setFlipX(bool), .alpha, .currentAnim, setSrc(src). | on_enter, update, draw |
 | PongBall | games/pong/scripts/ball.js | Implemented | Ball movement, wall bouncing, scoring. Emits `ball_scored`. | update, draw, isCollider |
 | PongPaddlePlayer | games/pong/scripts/paddle-player.js | Implemented | Player paddle. Arrow Up/Down or W/S. | update |
 | PongAI | games/pong/scripts/paddle-ai.js | Implemented | AI paddle. Chases ball Y at 250 px/s. | update |
