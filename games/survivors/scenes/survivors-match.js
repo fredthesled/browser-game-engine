@@ -15,6 +15,12 @@
 //   any SurvivorsCoin objects within stats.magnetRange toward the player at
 //   220 px/s. No structural change to the coin script required.
 //
+// Spawn model: _spawnEnemy rolls a type, then either spawns one enemy
+//   (most types) or a cluster of three (swarm). Swarm clusters share an edge
+//   and offset perpendicular to the entry direction so they enter the play
+//   area as a small group. The level-1 pool includes 'swarm' so initial
+//   difficulty already benefits from group spawning.
+//
 // Signals (all 'survivors_' prefixed):
 //   survivors_remove      { obj }               remove a GameObject
 //   survivors_enemy_died  { obj, xp, coinValue } increment kills, spawn coin
@@ -55,12 +61,18 @@ class SurvivorsMatchScene extends Engine.Scene {
     this._fadeOutTimer  = 0;
   }
 
+  // Spawn cadence. Base 1.3s at level 1 (down from 1.5s) so level 1 produces
+  // more spawn ticks; combined with swarm-clustering this raises level-1
+  // density meaningfully without removing the breathing-room feel of the
+  // early game.
   _getSpawnInterval() {
-    return Math.max(0.22, 1.5 - (this._level - 1) * 0.15);
+    return Math.max(0.22, 1.3 - (this._level - 1) * 0.13);
   }
 
+  // Enemy type pool. Level 1 now includes one 'swarm' entry (~33% roll rate)
+  // so swarm clusters appear from the first wave.
   _getEnemyTypePool() {
-    const pool = ['basic', 'basic'];
+    const pool = ['basic', 'basic', 'swarm'];
     if (this._level >= 2) pool.push('swarm', 'swarm');
     if (this._level >= 3) pool.push('sine',  'swarm');
     if (this._level >= 4) pool.push('tank');
@@ -84,7 +96,10 @@ class SurvivorsMatchScene extends Engine.Scene {
     return cfg;
   }
 
-  _spawnEnemy() {
+  // Picks a random off-screen edge position. Returns the side index so a
+  // caller spawning a cluster can offset members perpendicular to the
+  // entry direction (along the edge).
+  _pickEdgePosition() {
     const { canvasW, canvasH } = this._stats, m = 40;
     const side = Math.floor(Math.random() * 4);
     let x, y;
@@ -94,13 +109,37 @@ class SurvivorsMatchScene extends Engine.Scene {
       case 2: x = Math.random() * canvasW; y = canvasH + m; break;
       default: x = -m;                    y = Math.random() * canvasH;
     }
-    const pool  = this._getEnemyTypePool();
-    const type  = pool[Math.floor(Math.random() * pool.length)];
+    return { side, x, y };
+  }
+
+  _spawnOne(type, x, y) {
     const cfg   = this._getEnemyConfig(type);
     const enemy = new Engine.GameObject(x, y);
     enemy.attach(new SurvivorsEnemy(enemy, { ...cfg, player: this._playerObj }));
     this._enemies.push(enemy);
     this.add(enemy);
+  }
+
+  // Rolls a type once, then spawns 1 enemy (most types) or 3 clustered
+  // enemies along the same edge (swarm). Cluster spread is perpendicular to
+  // the entry direction (x for top/bottom, y for left/right).
+  _spawnEnemy() {
+    const pool = this._getEnemyTypePool();
+    const type = pool[Math.floor(Math.random() * pool.length)];
+    const { side, x, y } = this._pickEdgePosition();
+
+    if (type === 'swarm') {
+      const SPREAD = 36;
+      for (let i = 0; i < 3; i++) {
+        const t = (i - 1) * SPREAD; // -SPREAD, 0, +SPREAD
+        let ex = x, ey = y;
+        if (side === 0 || side === 2) ex += t;
+        else                          ey += t;
+        this._spawnOne(type, ex, ey);
+      }
+    } else {
+      this._spawnOne(type, x, y);
+    }
   }
 
   // Pulls coins within stats.magnetRange toward the player at 220 px/s.
