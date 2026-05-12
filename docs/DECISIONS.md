@@ -180,3 +180,33 @@ Option 3 was chosen because it matches the established engine pattern (ADR-0011)
 - When a game wants to use storage, its bootstrap passes `gameName`: `new Engine.Game(canvas, { gameName: 'survivors' })`. The first natural consumer is Survivors stats and coins, queued as a follow-up commit per the experimental-probe framing of ADR-0013.
 - `save()` refuses `undefined` and logs a warning; callers wanting to remove a key should call `clear()` explicitly. This avoids the ambiguity of round-tripping `undefined` through JSON.
 - `clearAll()` on an unnamespaced singleton wipes every key on the origin, including any that were set by other apps. This is acceptable because the only way to get an unnamespaced `Engine.storage` is to omit `gameName` from the Game constructor, which is a deliberate caller choice.
+
+## ADR-0015: Procedural sprite primitive (ShapeSprite Script) as the Shape DSL
+
+Date: 2026-05-12
+
+**Decision**: Sprite content for engine-based games is produced via a procedural Shape DSL, embodied in the `ShapeSprite` Script (`scripts/shape-sprite.js`). Each animation is a JavaScript draw function `(ctx, state) => void` that draws into a canvas context in host-local space. The Script manages animation state (current name, normalized time t, loop/oneshot, flip, alpha) and dispatches to the appropriate draw function each frame. SVG-rasterize is deferred but not retired.
+
+**Context**: The pixel-grid sprite generator was retired in the 2026-05-09 retro and the STATE.md sprite-generator retirement note. The forward path was identified as "SVG and/or shape-DSL sprites." Pre-flight research on 2026-05-12 (per CLAUDE.md §2) surveyed three relevant areas:
+
+1. **LLM-generated SVG quality**: The SVGenius and LLM4SVG papers (December 2024) document fundamental limitations: flat-token representation loses spatial structure, models lack global visual coherence, and errors accumulate. Claude-3.5 specifically benchmarks middling (FID 82.89) compared to LLM4SVG's tuned model (FID 64.11). SVG generation is better than pixel grids for current LLMs but remains a known-weak domain.
+2. **Shape DSL prior art**: Less direct precedent. Production canvas games predominantly use raster sprite sheets. Procedural canvas drawing appears in stylized indie work (Limbo, Sword & Sworcery) but is hand-built in vector tools rather than LLM-emitted.
+3. **Existing engine state**: Clown Brawler's clowns and gorillas were already inline canvas-primitive code (rectangles, circles, paths). Shape DSL formalizes that pattern as reusable engine infrastructure with zero visual change required.
+
+Three options were considered:
+
+1. **SVG-rasterize**: Claude emits SVG markup per frame; rasterize to PNG via `data:image/svg+xml;base64,...` Image; feed to existing SpriteSheet. Pro: bitmap output, decouples authoring from runtime. Con: LLM SVG quality is documented-weak; per-frame markup multiplies token cost by frame count; runtime adds an asynchronous rasterization step.
+2. **Shape DSL (chosen)**: Claude emits parametric JS draw functions. Pro: plays to Claude's strongest emission domain (code), one function can produce all animation states from a normalized time parameter (lower token cost), aligns with existing Clown Brawler aesthetic, no rasterization pipeline. Con: per-frame imperative drawing (acceptable for current entity counts under ~20), no built-in serialization (sprites are code, not assets).
+3. **Both**: implement Shape DSL first, add SVG-rasterize later if needed. Compatible because SVG-rasterize would produce a raster that the unchanged SpriteSheet consumes.
+
+Option 2 was chosen as the immediate path, with option 3 (later add SVG-rasterize as a sibling) preserved as a non-breaking future enhancement. Token economy (per CLAUDE.md §0) was the primary deciding factor: parametric draw functions emit fewer total tokens than equivalent SVG markup, and play to Claude's stronger code-generation domain rather than its weaker SVG domain.
+
+**Consequences**:
+
+- **API**: `new Engine.ShapeSprite(host, { animations, initialAnim })`. Each animation is `{ duration: seconds, loop: bool, draw: (ctx, state) => void }`. State is `{ anim, t, flipX }`. Method surface mirrors `SpriteSheet` for cognitive consistency: `play(name, force)`, `isDone()`, `setFlipX(b)`, `getFlipX()`, plus public `.alpha` and `.currentAnim`.
+- **Drawing convention**: matches the engine's host-local convention (ADR-0008 and the Scene transform handling in ARCHITECTURE.md). The draw function sees `(0, 0)` as the host's position and draws shapes relative to it.
+- **Animation model**: continuous parametric `t` (0..1 normalized over `duration`), not discrete frames. Smooth animation by default. The draw function can implement frame-by-frame snapping internally by quantizing t if a stepped look is wanted.
+- **Performance**: imperative drawing per frame is acceptable for current scale (under ~20 entities). For very large entity counts, cached rasters (SpriteSheet, or future SVG-rasterize feeding SpriteSheet) would be more efficient. The threshold is documented in `scripts/_registry.md`; not a current concern.
+- **Integration**: Clown Brawler's existing inline drawing is the natural first conversion target. No visual change expected; the goal is converting ad-hoc per-script drawing into reusable infrastructure with a uniform animation lifecycle. Queued as a follow-up commit per the experimental-probe framing of ADR-0013.
+- **SVG-rasterize remains deferred**, not retired. If a game ever needs visual fidelity beyond canvas primitives (shading, gradients, complex curves not worth drawing imperatively), SVG-rasterize can be added as a sibling tool that produces input to `SpriteSheet`. No architectural change required.
+- **Konva.Sprite API integration** is flagged as a separate future investigation. It would require imported raster sheets, which raises asset-sourcing questions (in-repo folder, third-party fork, or external host) that the user has flagged for revisit after Shape DSL is exercised.

@@ -75,9 +75,9 @@ Don't ask obvious questions. Don't ask things the request already answered. Dig 
 
 When a request lands in one of these, raise it during pre-flight rather than discover it mid-build.
 
-- **Direct pixel-grid placement.** Asking Claude to emit 2D integer arrays for sprite frames is fundamentally weak — no spatial awareness across rows, no error correction, expensive in tokens. Use SVG, shape DSL, or an actual image-gen model via MCP.
+- **Pixel-grid placement and LLM SVG.** 2D integer arrays for sprite frames are fundamentally weak: no spatial awareness across rows, no error correction, expensive in tokens. LLM-generated SVG also benchmarks middling for current models (SVGenius and LLM4SVG, December 2024; Claude-3.5 specifically at FID 82.89 vs. LLM4SVG at 64.11). Both are inferior for our use cases to procedural drawing via `scripts/shape-sprite.js` (Shape DSL, ADR-0015). For high-fidelity raster output, route to a diffusion model via MCP or import a hand-made sprite sheet.
 - **Long verbatim reproduction.** Reciting articles, books, song lyrics, etc. — won't be accurate, and copyright applies regardless. Paraphrase or fetch.
-- **Fresh raster image generation.** Claude has no native image-gen model. SVG yes, ASCII yes, PNG no. Route to an image model via MCP/tool, or import.
+- **Fresh raster image generation.** Claude has no native image-gen model. SVG yes (with the caveats above), ASCII yes, PNG no. Route to an image model via MCP/tool, or import.
 - **Many-step floating-point math.** Long arithmetic chains accumulate error. Prefer code execution.
 - **Spatial layouts without a render loop.** "Position these elements correctly" without seeing output is a guess. Render → screenshot → vision is far better.
 - **Exact byte-level reproduction** (file hashes, encrypted blobs, binary protocols). Use tools, not generation.
