@@ -135,3 +135,23 @@ Audio controls are included in the pause menu as the simplest path to per-sessio
 - `PauseOverlay` is a plain class in `scripts/`, not a Script subclass. This is a documented exception to the normal role of that folder.
 - Pong needs to be retrofitted (tracked in STATE.md). All games created after this ADR include PauseOverlay from the start.
 - If a game needs custom pause layout, it can subclass PauseOverlay or write its own.
+
+## ADR-0013: Games are experimental probes during engine development
+
+Date: 2026-05-12
+
+**Decision**: Games built during the engine's development phase are treated as experimental probes rather than shipping products. Each game is a vehicle for exercising and stressing the engine across a different shape of problem (lockstep two-player input, large enemy counts and progression systems, sprite work and side-scrolling cameras, and so on). Gaps in shipped polish (missing SFX, missing pause, primitive-only rendering, untuned difficulty) are accepted as intentional during this phase.
+
+**Context**: The engine is the long-running deliverable. Specific games are short-running explorations whose value is in what they teach the engine. Clown Brawler, for example, was an explicit probe of image-generation limits and animation assumptions; its lack of real sprites is the lesson, not a defect. Forcing every game to ship-grade completion before moving on would slow engine iteration and conflate two distinct kinds of work.
+
+Without this framing, fresh Claude sessions land on a STATE.md showing three games with three different unaddressed gaps and reasonably interpret the situation as a backlog crisis. That interpretation is incorrect under the current development mode but defensible given the artifacts visible. The ADR exists to make the mode explicit.
+
+**Consequences**:
+
+- Three or more games in the repo may carry small unaddressed gaps simultaneously. This is expected.
+- Future Claude instances should not nag about incomplete games or push to close every loose end before the next experiment. The default is to learn and move on.
+- A separate, explicit "ship this game" pass would address the deferred items (Pong PauseOverlay, Survivors SFX, Clown Brawler sprites, etc.) for any game that gets promoted.
+- The "next up" list in STATE.md is engine-oriented, not game-completion-oriented, while this ADR is in effect.
+- Per-game polish items are tracked in a "Deferred to shipping mode" section of STATE.md so they remain visible without competing with engine priorities.
+- Promotion is an explicit decision by the user. It is not a drift state Claude can declare.
+- Reversing the framing is straightforward: a future ADR can move a specific game (or all games) into shipping mode and reactivate the deferred items.
