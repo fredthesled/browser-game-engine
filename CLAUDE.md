@@ -1,104 +1,156 @@
 # CLAUDE.md
 
-Operating manual for AI assistants working in this repository. Read this in full at the start of every session, before any other action.
+Operating rules for Claude when working on the engine and engine-adjacent projects. Bias: caution over speed for non-trivial work; speed for trivial work. Read top-to-bottom at session start.
 
-## What this repo is
+---
 
-A browser-only 2D game framework, Godot-inspired, designed for use in environments where:
+## 0. Project context (frames every decision below)
 
-- No local development tools can be installed
-- All editing happens in browser-based AI chat sessions
-- The final deliverable must be a single HTML file that runs in any browser
+This project extends a deliberately minimal 2D game engine. The engine exists to **save tokens and streamline development** — it's a thin tool, not a framework. Tools and games we build on top of it should reinforce that goal, not fight it.
 
-This repo is a long-running framework template intended to support multiple game projects over time. Treat it as durable infrastructure, not a one-off project.
+Concrete implications:
+- A subsystem that costs thousands of tokens per use to produce mediocre output is **anti-aligned** with the engine, even if it technically works.
+- "Wrap an existing tool" beats "rebuild it badly in pure LLM" almost every time when the existing tool is mature.
+- Token economy is a first-class constraint, alongside correctness and ergonomics. Surface token cost when it's relevant.
 
-## Read these first, in this order
+If a request would produce something that violates these implications, say so before building.
 
-At the start of every session:
+---
 
-1. `docs/STATE.md` for what was done last and what is in progress
-2. `docs/CONVENTIONS.md` for non-negotiable rules
-3. `docs/ARCHITECTURE.md` for engine design and lifecycle contracts
-4. The relevant `_registry.md` for whatever subsystem you are touching (scenes, objects, or scripts)
-5. The specific files you will be modifying
+## 1. The Complexity Score
 
-Do not start writing code or planning changes before completing this read. The .md files are the source of truth, not your memory of prior conversations.
+Before responding to any coding or research request, score it **silently** on five factors, 0–2 each, total 0–10:
 
-## Critical constraints
+| Factor | 0 | 1 | 2 |
+|---|---|---|---|
+| **Novelty** | Done it many times | Variation on familiar | New territory for me |
+| **Scope** | Single function / few lines | One file / one feature | Multi-file / new subsystem |
+| **Claude-fit** | Plays to strengths (text, code, structured reasoning) | Mixed | Plays to weaknesses (spatial, exact reproduction, image gen) |
+| **Reversibility** | Trivially redoable | Some sunk cost if wrong | Expensive to throw away |
+| **Domain-specificity** | Generic | Some specialty | Heavy specialty likely has prior art |
 
-- Runtime is the browser only. No Node.js, no npm packages at runtime, no bundlers, no build step that requires installation.
-- Final deliverable for any game is a single HTML file in `build/` that the user can open directly.
-- The user develops on a locked-down corporate network where most external services are blocked. Do not introduce CDN dependencies or third-party API calls without explicit approval.
-- Code is organized as separate JS files for clarity, version control, and human readability, but shipped as a concatenated single-file HTML.
+**Bands:**
+- **0–3 — Trivial.** Just build. Don't announce the score.
+- **4–5 — Moderate.** Build, but state assumptions inline. Don't announce the score unless asked.
+- **6–7 — Non-trivial.** Run the **pre-flight** (§2). Show the score and reasoning to the user.
+- **8–10 — Complex.** Pre-flight is mandatory. Use the **interview pattern** (§3) if scope is genuinely unclear. Show the score, the factor breakdown, and ask before writing code.
 
-## Edit discipline
+The user can correct the score. If they say "this is simpler than that" or "you're overthinking it," recompute and proceed.
 
-- Make minimal, targeted changes. Do not refactor unrelated code while editing a file.
-- Do not rewrite a file from scratch unless the user has explicitly asked for that.
-- Preserve existing comments, function order, and naming unless you have a stated reason to change them.
-- If you discover a problem outside the scope of the current task, surface it in your response. Do not silently fix it.
-- If you are unsure whether a change is in scope, ask before making it.
+---
 
-## Update protocol
+## 2. Pre-flight (triggered at score ≥6)
 
-When you change code, you also update the matching documentation in the same response:
+Before writing any code, in this order:
 
-- New scene → add an entry to `scenes/_registry.md`
-- New object type → add an entry to `objects/_registry.md`
-- New script → add an entry to `scripts/_registry.md`
-- Architectural change → update `docs/ARCHITECTURE.md` and add an ADR to `docs/DECISIONS.md`
-- Any meaningful work → update `docs/STATE.md` at the end of the session
+1. **Search the world.** What already exists? Libraries, services, papers, GitHub projects, blog posts about people who tried this. Use `web_search`. Two to four queries minimum.
+2. **Name Claude's limits in this domain.** Reference §4. Don't be vague — say specifically *which* limit applies and how it affects the approach.
+3. **Recommend build / buy / wrap / import.** Pick one and justify in two sentences.
+   - **Build:** No good prior art, or prior art doesn't fit constraints. Implement from scratch.
+   - **Buy:** A hosted service or paid tool already does this well. Use it.
+   - **Wrap:** A library/CLI exists; we provide a thin integration layer.
+   - **Import:** The artifact in question (sprites, music, levels) is best produced *outside* this system and brought in.
+4. **Write a brief scope.** 5–10 lines, plain prose: problem, prior art found, chosen approach, known gotchas. Not a doc — a paragraph.
+5. **Confirm direction.** Ask the user before writing code. Use `ask_user_input_v0` if there are 2–3 real choices to make.
 
-The .md files are authoritative. Code is the implementation of the documented spec. If they disagree, treat the disagreement as a bug to be reconciled, not a normal state.
+If the user has already given enough information to skip a step, skip it. Don't pad.
 
-## Looking up resources
+---
 
-When a task involves third-party assets or libraries (sound effects, sprites, audio playback, networking, collision, etc.), consult `docs/resources/` before researching from scratch:
+## 3. The interview pattern (score ≥8 or genuinely ambiguous scope)
 
-- `docs/resources/INDEX.md` for a map of the folder.
-- `docs/resources/assets.md` for sources of art, sound, music, and fonts.
-- `docs/resources/libraries.md` for JavaScript libraries we may bundle.
-- `docs/resources/multiplayer.md` for networking architecture and library choices.
-- `docs/resources/attribution.md` for crediting third-party work in games.
+For very complex or under-specified requests, don't guess at the spec. Interview.
 
-If you find or evaluate a resource not yet documented, add it to the relevant file in the same response. The intent is that future sessions never re-research the same ground.
+Use `ask_user_input_v0` to ask about:
+- **Prior attempts** — has the user tried this before? What broke?
+- **Inherited constraints** — what does the engine already do that this must coexist with?
+- **Must-haves vs. nice-to-haves** — what counts as success?
+- **Deal-breakers** — what would make this useless even if it works?
 
-## Where new things go
+Don't ask obvious questions. Don't ask things the request already answered. Dig into the parts the user might not have considered. Then write the scope (§2.4), confirm, then build.
 
-- A new reusable GameObject type → `objects/<name>.js` plus registry entry
-- A new scene → `scenes/<name>.js` plus registry entry
-- A new attachable behavior (mover, collider, animator, etc.) → `scripts/<name>.js` plus registry entry
-- A core engine change → existing or new file in `engine/` plus DECISIONS entry
-- A specific game built on the engine → `games/<game-name>/` with its own subfolder structure
-- A buildable preview → `build/<game-name>.html` (concatenated single-file output)
+---
 
-## Anti-patterns to avoid
+## 4. Known Claude limitations (anti-patterns to flag)
 
-- Adding npm dependencies. The runtime is the browser; we have no install step.
-- Using ES module `import` statements in the runtime HTML. They are fine in source for organization, but the build step inlines everything into ordered script tags.
-- Creating files outside the documented structure without flagging it.
-- Skipping the registry update step when adding a new module.
-- Assuming you remember prior state from earlier in the conversation. Always re-read STATE.md.
-- Producing visual flourishes, marketing language, or padding in code comments and docs. The user values precision.
+When a request lands in one of these, raise it during pre-flight rather than discover it mid-build.
 
-## Communication style in this Project
+- **Direct pixel-grid placement.** Asking Claude to emit 2D integer arrays for sprite frames is fundamentally weak — no spatial awareness across rows, no error correction, expensive in tokens. Use SVG, shape DSL, or an actual image-gen model via MCP.
+- **Long verbatim reproduction.** Reciting articles, books, song lyrics, etc. — won't be accurate, and copyright applies regardless. Paraphrase or fetch.
+- **Fresh raster image generation.** Claude has no native image-gen model. SVG yes, ASCII yes, PNG no. Route to an image model via MCP/tool, or import.
+- **Many-step floating-point math.** Long arithmetic chains accumulate error. Prefer code execution.
+- **Spatial layouts without a render loop.** "Position these elements correctly" without seeing output is a guess. Render → screenshot → vision is far better.
+- **Exact byte-level reproduction** (file hashes, encrypted blobs, binary protocols). Use tools, not generation.
+- **Web facts past the knowledge cutoff.** Search, don't guess.
 
-The user has explicit preferences that apply to all chat responses and any prose written into the repo:
+If you're unsure whether a request hits one of these, search to verify. The cost of a search is far below the cost of building the wrong thing.
 
-- No em-dashes. Use commas, parentheses, or rephrasing.
-- No emojis.
-- No "X isn't just Y, it's also Z" patterns or similar LLM tropes.
-- Direct, factually accurate language over softening or pandering.
-- Academic and professional tone, treating the user as a domain peer rather than a customer to be reassured.
+---
 
-These apply in chat, in markdown documentation, in code comments, and in commit messages.
+## 5. Red-flag words (self-check before claiming done)
 
-## Closing a session
+If a completion claim contains any of these, stop and replace with evidence:
+*should work*, *probably*, *I think*, *seems correct*, *this might*, *in theory*, *if everything's wired right*
 
-Before ending substantive work in a session:
+Replacement is either: (a) actual evidence (test output, executed code, citation), or (b) honest surfacing — "I haven't verified X, here's how you'd check."
 
-1. Update `docs/STATE.md` to reflect what was done and what is next.
-2. If a meaningful design decision was made, add an ADR entry to `docs/DECISIONS.md`.
-3. Commit changes with a descriptive message in the format `<area>: <what changed>`.
-   - Examples: `engine: add signal bus`, `docs: revise STATE for sprite work`, `scenes: add main menu`, `init: scaffold repo`.
-4. Confirm to the user what was committed and what remains open.
+---
+
+## 6. Circuit breaker
+
+After **three failed attempts** at the same underlying issue, stop. Don't try a fourth fix.
+
+Instead:
+- State plainly: "I've tried [A], [B], [C]. None worked. I think the underlying approach may be wrong."
+- Re-examine assumptions. What did each attempt assume that might be false?
+- Re-score the task. Often the score was too low; the actual complexity reveals itself in failed attempts.
+- Propose either a different approach or a clarifying conversation.
+
+The fourth attempt at the same approach is almost always wasted tokens.
+
+---
+
+## 7. Skip phrases (escape hatch)
+
+The user can bypass the pre-flight at any time with any of:
+- "just build"
+- "skip scoping"
+- "fast mode"
+- "vibe it"
+- "I know, just do it"
+
+Honor these immediately. Don't quietly partial-comply. If the user invokes a skip phrase and the task is in a known-anti-pattern category (§4), state the limitation in one sentence and then proceed anyway.
+
+---
+
+## 8. Engine-specific operating rules
+
+- **Token economy is non-negotiable.** When building a tool that calls the API, mention the per-call token cost and a rough budget for typical use.
+- **Reuse before invent.** If the engine already has a primitive that fits, use it. Search the engine source before adding a new system.
+- **Thin wrappers preferred.** A 50-line wrapper around a mature tool beats a 500-line reimplementation.
+- **No silent network calls.** Tools that hit external services should make that visible to the user of the tool.
+- **Deterministic > generative when possible.** If a procedural approach can produce the asset, prefer it over an LLM call.
+- **Dead files are marked, not deleted, when tool gating prevents removal.** See `docs/DEAD_FILES.md` for the full convention and the active disposal queue. Files carrying a `DEAD-FILE` banner header are inert: do not modify them, do not include them in builds, do not surface them as backlog. A grep for `DEAD-FILE` across the repo enumerates every such file.
+
+---
+
+## 9. Retro: 2026-05-09, sprite generator
+
+**What happened.** User asked for an "Apps and websites" creation. I asked three setup questions, none about prior art or the problem space. I built a full Claude-API-driven pixel sprite generator that asks the model to emit 32×32 integer grids. Output: abstract, unrecognizable clown sprites; one of four idle candidates failed silently; a button-disabled bug made the UI unresponsive.
+
+**Root cause.** Three layers, in order of seriousness:
+1. *Skipped research.* Five minutes of searching would have surfaced PixelLab, the Aseprite-MCP swordsman experiment, and the broader consensus that direct LLM pixel placement is a known-weak approach. The right answer ("use diffusion via MCP, or import sprites") was already in the world.
+2. *Anti-aligned with engine purpose.* 4096-token API calls per frame for mediocre output, in a project whose stated goal is token economy. The approach contradicted the project's own constraints.
+3. *Implementation bugs.* Real, but downstream of the bigger problems.
+
+**What should have happened.** Score it: novelty 1, scope 2, Claude-fit 2, reversibility 1, domain-specificity 2 = **8/10**. Pre-flight triggers. Search → "direct pixel gen is weak; PixelLab and similar use diffusion; Aseprite MCP exists; SVG-rasterize is a middle path." Surface options. User picks. Build the right thing.
+
+**Lesson encoded.** Generative content tasks (anything producing visual/audio/structured output for end-user consumption) **score domain-specificity at 2 by default** and **Claude-fit conservatively**. Engine subsystems score scope at 2 by default. These two combined put almost every meaningful engine task at ≥6, which is correct.
+
+---
+
+## 10. Maintenance
+
+- Add a new entry to §9 after any cycle where the rules failed to prevent a wrong-direction build. Future-Claude reads retros as cautionary examples; abstract advice ages worse than concrete stories.
+- If a rule above starts firing too often on trivial work, soften the threshold or add a skip case. Don't let the rules become bureaucratic.
+- Keep this file under 300 lines. If it grows past that, it's no longer being read.

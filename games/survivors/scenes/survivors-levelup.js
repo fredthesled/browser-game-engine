@@ -1,3 +1,19 @@
+// ============================================================================
+// DEAD-FILE
+// ----------------------------------------------------------------------------
+// Status:      Inactive. Not loaded by any build. Do not maintain, modify, or
+//              include in builds. This file is parked, awaiting deletion.
+// Marked:      2026-05-12
+// Reason:      Superseded by SurvivorsShopScene.
+// Replacement: games/survivors/scenes/survivors-shop.js
+// Disposal:    GitHub:delete_file requires an in-browser approval that is not
+//              consistently available, so the file is annotated rather than
+//              removed. Listed in docs/DEAD_FILES.md (disposal queue).
+// Convention:  See docs/DEAD_FILES.md.
+// ============================================================================
+//
+// Original contents preserved below for git history continuity.
+
 // games/survivors/scenes/survivors-levelup.js
 // Post-wave upgrade selection. Fades in from black (room transition illusion).
 // Shows 3 random upgrade cards; Up/Down navigates, Space/Enter confirms.

@@ -1,3 +1,20 @@
+============================================================================
+DEAD-FILE
+----------------------------------------------------------------------------
+Status:      Inactive. Not a complete or usable build artifact.
+Marked:      2026-05-12
+Reason:      Aborted/incomplete HTML build fragment. Contains only the HTML
+             head and the opening of a <script> block; no engine code, no
+             game code, no closing tags. Cannot be opened or run.
+Replacement: build/clown-brawler.html (the active, complete build)
+Disposal:    GitHub:delete_file requires an in-browser approval that is not
+             consistently available, so the file is annotated rather than
+             removed. Listed in docs/DEAD_FILES.md (disposal queue).
+Convention:  See docs/DEAD_FILES.md.
+============================================================================
+
+(Original contents preserved below for git history continuity.)
+
 <!-- auto-generated: do not edit directly. regenerate from source files in engine/, scripts/, games/clown-brawler/ -->
 <!DOCTYPE html>
 <html>
