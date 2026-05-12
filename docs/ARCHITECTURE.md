@@ -94,6 +94,8 @@ The base class provides no-op implementations so subclasses only define the hook
 
 Scripts that participate in collision detection (Collider and any future variants) set `this.isCollider = true` and implement `getAabb()` and `onCollide(other)`. See ADR-0010 for the contract.
 
+A Script does not have to be attached to a host's scripts list to be useful. A controlling script can construct a Script-derived object as a private member and drive its lifecycle manually (calling its `update(dt)` and `draw(ctx)` itself). `ShapeSprite` is used this way by character scripts in Clown Brawler: the controller script owns the sprite, sets its animation state and alpha each frame, and forwards lifecycle calls. This pattern keeps draw ordering deterministic (the controller decides when its effects layer relative to the sprite) and avoids the need to look up sibling scripts on the host.
+
 ### SignalBus (global)
 
 Responsibilities: provide a global pub/sub mechanism for decoupled events.
@@ -241,7 +243,7 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 8. `engine/audio.js` (depends on `jsfxr` global from sfxr.js)
 9. `engine/storage.js` (no engine dependencies)
 10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
-11. Scripts in any order (they only depend on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`).
+11. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, and `Engine.storage`.
 12. Scenes (after the scripts they reference).
 13. A small bootstrap snippet that gets the canvas element, instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 

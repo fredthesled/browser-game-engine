@@ -9,6 +9,18 @@ Code and process rules for this repo. Read once per session. These are non-negot
 - Folders: `lower-case/`.
 - Filenames match the primary class they export, in kebab-case (`GameObject` lives in `game-object.js`).
 
+## Build versioning (sibling-iteration convention)
+
+Established 2026-05-12 in this session.
+
+- The first build of a game is `build/<game>.html` (no version suffix; implicit v1).
+- When iterating on a game that already has a build, create a sibling at `build/<game>-v2.html`, `build/<game>-v3.html`, and so on, rather than overwriting the previous build.
+- The previous build stays unchanged and serves as a comparison reference during the iteration.
+- Source files in `games/<game>/scripts/` and `games/<game>/scenes/` evolve in place; the build artifact is what gets versioned. Git history is the record of the previous source state, not parallel `-v2` source files.
+- Once a new version is validated and the prior version is no longer needed for comparison, the prior `.html` build can be marked DEAD per `docs/DEAD_FILES.md` (or actually deleted if the deletion tool is available).
+- The convention applies to material changes (refactors, new features, significant visual or gameplay revisions). Trivial fixes (a single typo, a one-line balance tweak) can overwrite without versioning if the difference is not worth preserving.
+- The same convention applies to AI-powered artifacts and tooling shipped in `build/` or anywhere else under the repo (e.g. an eventual `build/sprite-tools-v2.html` if such a thing is ever made).
+
 ## Code style
 
 - ES2020+ syntax. Target: modern Chromium, Firefox, and Safari.
