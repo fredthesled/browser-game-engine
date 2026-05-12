@@ -3,7 +3,7 @@
 // Fades in on entry; fades out before transitioning to the next match.
 // Upgrade prices: basePrice + purchaseCount * priceInc.
 // 8 upgrades shown simultaneously (all available at once, prices visible).
-// Navigation: ArrowUp/ArrowDown or W/S; ENTER or SPACE to buy or continue.
+// Navigation: ArrowUp/Down or W/S; confirm with Enter/Space.
 // Depends on: Engine.Scene, Engine.input.
 //   SurvivorsMatchScene must be defined in build (transition target).
 // Used by: SurvivorsMatchScene (on wave completion).
@@ -75,13 +75,13 @@ class SurvivorsShopScene extends Engine.Scene {
     if (this._flashTimer > 0) this._flashTimer -= dt;
 
     const items = this._getItems();
-    const input = Engine.input;
-    const upPressed   = input.wasJustPressed('ArrowUp')   || input.wasJustPressed('w') || input.wasJustPressed('W');
-    const downPressed = input.wasJustPressed('ArrowDown') || input.wasJustPressed('s') || input.wasJustPressed('S');
-    if (upPressed)   this._cursor = (this._cursor - 1 + items.length) % items.length;
-    if (downPressed) this._cursor = (this._cursor + 1) % items.length;
+    // Accept arrow keys and WASD, matching the player-controller pattern.
+    if (Engine.input.wasJustPressed('ArrowUp')   || Engine.input.wasJustPressed('w') || Engine.input.wasJustPressed('W'))
+      this._cursor = (this._cursor - 1 + items.length) % items.length;
+    if (Engine.input.wasJustPressed('ArrowDown') || Engine.input.wasJustPressed('s') || Engine.input.wasJustPressed('S'))
+      this._cursor = (this._cursor + 1) % items.length;
 
-    if (input.wasJustPressed('Enter') || input.wasJustPressed(' ')) {
+    if (Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ')) {
       const sel = items[this._cursor];
       const ul  = this._stats.upgradeLevels;
 
@@ -189,7 +189,7 @@ class SurvivorsShopScene extends Engine.Scene {
     );
 
     ctx.fillStyle = '#3a4a5a'; ctx.font = '11px monospace';
-    ctx.fillText('WASD or ARROWS navigate   ENTER buy or continue', W / 2, H - 12);
+    ctx.fillText('UP/DOWN or W/S navigate   ENTER buy or continue', W / 2, H - 12);
 
     ctx.restore();
 
