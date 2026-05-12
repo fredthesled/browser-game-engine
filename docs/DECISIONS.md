@@ -155,3 +155,28 @@ Without this framing, fresh Claude sessions land on a STATE.md showing three gam
 - Per-game polish items are tracked in a "Deferred to shipping mode" section of STATE.md so they remain visible without competing with engine priorities.
 - Promotion is an explicit decision by the user. It is not a drift state Claude can declare.
 - Reversing the framing is straightforward: a future ADR can move a specific game (or all games) into shipping mode and reactivate the deferred items.
+
+## ADR-0014: Persistent storage via Engine.Storage with Game-configured namespace
+
+Date: 2026-05-12
+
+**Decision**: Persistent storage is provided by `engine/storage.js`, instantiated by the `Game` constructor as `Engine.storage` (parallel to `Engine.input` and `Engine.audio` per ADR-0011). The Game constructor accepts an optional `gameName` option which becomes the storage namespace; all keys are stored as `${gameName}:${key}` in localStorage. If `gameName` is omitted, keys are stored as-is.
+
+**Context**: STATE.md flagged save/load as next-up engine work with an explicit open question on namespacing. Three options were considered:
+
+1. **Caller-managed prefixes**: API takes raw keys; callers write `Engine.storage.save('survivors:stats', ...)`. Simplest engine code, but every callsite is responsible for the prefix and a typo silently splits keys across "namespaces."
+2. **Per-game instance**: API has only the `Engine.Storage` class; each game's bootstrap creates `const save = new Engine.Storage('survivors')`. Clean separation, but breaks the existing singleton pattern from ADR-0011 (audio) and requires every game to thread a save object through its scene tree.
+3. **Game-configured singleton (chosen)**: `Engine.storage` is auto-instantiated by Game with a namespace derived from the `gameName` option. Callsites use short keys (`Engine.storage.save('stats', ...)`), prefixing is transparent, and the pattern matches `Engine.input` / `Engine.audio`. Adds one option to the Game constructor signature, which is backward-compatible since `gameName` is optional.
+
+Option 3 was chosen because it matches the established engine pattern (ADR-0011), minimizes ceremony at callsites, and makes per-game isolation the default behavior rather than a per-callsite responsibility.
+
+**Consequences**:
+
+- Game constructor signature is now `(canvas, options = {})`. The only currently-defined option is `gameName: string`. The change is backward-compatible: `new Engine.Game(canvas)` continues to work and instantiates `Engine.storage` with no namespace.
+- Public API: `save(key, value)`, `load(key, defaultValue = null)`, `has(key)`, `clear(key)`, `clearAll()`, `keys()`, plus introspection helpers `isAvailable()` and `getNamespace()`. JSON serialization is automatic.
+- If localStorage is unavailable (incognito, embedded contexts, disabled by the user), Storage falls back to an in-memory `Map` so calls do not throw. `isAvailable()` exposes the actual state. Data is lost when the page reloads in fallback mode.
+- The build concatenation order grows to insert `engine/storage.js` after `engine/audio.js` and before `engine/game.js` (Game's constructor instantiates Storage). See ARCHITECTURE.md for the full updated order.
+- Existing builds (Pong, Survivors, Clown Brawler) do not need to be regenerated. Their bootstrap snippets do not pass `gameName`, so `Engine.storage` exists with no namespace and is simply unused. The change is backward-compatible by design.
+- When a game wants to use storage, its bootstrap passes `gameName`: `new Engine.Game(canvas, { gameName: 'survivors' })`. The first natural consumer is Survivors stats and coins, queued as a follow-up commit per the experimental-probe framing of ADR-0013.
+- `save()` refuses `undefined` and logs a warning; callers wanting to remove a key should call `clear()` explicitly. This avoids the ambiguity of round-tripping `undefined` through JSON.
+- `clearAll()` on an unnamespaced singleton wipes every key on the origin, including any that were set by other apps. This is acceptable because the only way to get an unnamespaced `Engine.storage` is to omit `gameName` from the Game constructor, which is a deliberate caller choice.

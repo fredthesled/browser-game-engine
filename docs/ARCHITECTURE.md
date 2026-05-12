@@ -4,7 +4,7 @@ This document describes the engine's design as of the most recent locked-in deci
 
 ## Overview
 
-The engine is composed of seven classes/modules, each in its own file under `engine/`:
+The engine is composed of eight classes/modules, each in its own file under `engine/`:
 
 | File | Class/module | Role |
 |------|--------------|------|
@@ -15,8 +15,9 @@ The engine is composed of seven classes/modules, each in its own file under `eng
 | `engine/signal-bus.js` | `SignalBus` (global instance) | Pub/sub for decoupled events. |
 | `engine/input.js` | `Input` (global instance) | Latched keyboard and mouse state, queried per frame. |
 | `engine/audio.js` | `Audio` (global instance) | Procedural sound effects via vendored jsfxr. |
+| `engine/storage.js` | `Storage` (global instance) | Key/value persistence backed by localStorage, with optional per-game namespacing. |
 
-The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, and a single Audio instance. Scenes, GameObjects, and Scripts are instantiated freely.
+The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely.
 
 Vendored third-party code lives under `engine/lib/`. Currently this contains `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. See `engine/lib/README.md` for the source and update procedure.
 
@@ -28,11 +29,13 @@ Responsibilities: own the loop, hold the active scene, drive input updates each 
 
 Public API:
 
-- `constructor(canvas)` takes a `<canvas>` DOM element. Constructs `Engine.input = new Engine.Input(canvas)` and `Engine.audio = new Engine.Audio()`.
+- `constructor(canvas, options = {})` takes a `<canvas>` DOM element and an options object. Constructs `Engine.input = new Engine.Input(canvas)`, `Engine.audio = new Engine.Audio()`, and `Engine.storage = new Engine.Storage(options.gameName)`.
+  - `options.gameName` (optional string): becomes the namespace prefix for `Engine.storage`. Omit for a no-namespace storage instance. See ADR-0014.
 - `start()` begins the requestAnimationFrame loop.
 - `stop()` cancels the loop.
 - `setScene(scene)` at the next frame boundary, calls `currentScene.exit()` if a scene is active, then `scene.enter()`, and swaps the reference.
 - `currentScene` read-only reference to the active scene (or null before any scene is set).
+- `gameName` read-only string set from the `gameName` option, or empty string if not provided.
 
 Internal state: `lastFrameTime` for delta time calculation, `_pendingScene` for queued transitions, `_animationHandle` for cancellation.
 
@@ -137,6 +140,25 @@ Instantiated by Game and assigned to `Engine.audio`. See ADR-0011 for the ration
 
 Browser autoplay caveat: AudioContext may start suspended until a user gesture. The first `play()` after any keydown/mousedown will unlock audio. Calls before any gesture may produce no sound in some browsers (silent no-op rather than error).
 
+### Storage (global)
+
+Responsibilities: provide key/value persistence backed by `localStorage`, with optional per-game namespacing transparently applied to all keys. Falls back to an in-memory `Map` if localStorage is unavailable so calls never throw.
+
+Public API:
+
+- `save(key, value)` JSON-serializes and stores. Returns `true` on success, `false` if serialization fails, the quota is exceeded, or `value` is `undefined`.
+- `load(key, defaultValue = null)` JSON-parses and returns the stored value. Returns `defaultValue` if the key is missing or stored data cannot be parsed.
+- `has(key)` `true` if a value is stored under the key.
+- `clear(key)` removes a single key. Silent if the key does not exist.
+- `clearAll()` removes every key in this namespace. With no namespace, removes every key on the origin (use carefully; affects other apps sharing the origin).
+- `keys()` returns an array of unprefixed keys present in this namespace.
+- `isAvailable()` `true` if `localStorage` is the underlying store; `false` if the in-memory fallback is in use (data does not persist across reloads).
+- `getNamespace()` returns the configured namespace string (empty string if none).
+
+Instantiated by Game and assigned to `Engine.storage`. The namespace is taken from the Game constructor's `options.gameName`; with no `gameName`, keys are stored as-is. See ADR-0014 for the rationale that storage is a Game-configured singleton rather than a per-game instance or a flat-prefix wrapper.
+
+Serialization caveats: `undefined` cannot round-trip through JSON; `save()` refuses it with a console warning. Callers wanting to remove a key should call `clear()` explicitly. `null` is a valid value and round-trips correctly. Be aware that `load()` returning `null` is ambiguous (missing vs. explicitly stored null); use `has()` to disambiguate when needed.
+
 ## Frame lifecycle
 
 For each animation frame the Game class executes, in order:
@@ -197,6 +219,7 @@ engine/
 ├── signal-bus.js
 ├── input.js
 ├── audio.js
+├── storage.js
 └── lib/
     ├── README.md
     ├── UNLICENSE
@@ -216,10 +239,11 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 6. `engine/game-object.js`
 7. `engine/scene.js`
 8. `engine/audio.js` (depends on `jsfxr` global from sfxr.js)
-9. `engine/game.js` (instantiates `Engine.Audio` in its constructor)
-10. Scripts in any order (they only depend on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`).
-11. Scenes (after the scripts they reference).
-12. A small bootstrap snippet that gets the canvas element, instantiates `Engine.Game`, sets the initial scene, and calls `start()`.
+9. `engine/storage.js` (no engine dependencies)
+10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
+11. Scripts in any order (they only depend on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`).
+12. Scenes (after the scripts they reference).
+13. A small bootstrap snippet that gets the canvas element, instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 
 ## Open questions and future work
 
@@ -228,7 +252,6 @@ Not in scope for the initial engine version, to be designed with an ADR when nee
 - Multi-scene support (deferred per ADR-0006).
 - Asset loading and caching for images. For now, scripts can construct `Image` objects directly when needed.
 - File-backed audio playback (mp3/ogg/wav). Will live in `scripts/audio-player.js` wrapping Howler.js. Distinct from `Engine.audio`, which handles procedural SFX. See ADR-0011.
-- Save and load of persistent state.
 - Frame-rate-independent physics. Current dt-based motion is naive and acceptable for early POCs.
 - Spatial partitioning for collision. The current O(N²) pairwise pass is fine up to ~20 colliders. See ADR-0010.
 - Networking and multiplayer. See `docs/resources/multiplayer.md`.

@@ -1,18 +1,27 @@
 // engine/game.js
 // Owns the animation loop, the canvas, and the active scene. Constructs the
-// engine-level singletons (Engine.input, Engine.audio).
-// Depends on: Engine.Input and Engine.Audio (instantiated here), an active scene (held but not imported).
+// engine-level singletons (Engine.input, Engine.audio, Engine.storage).
+// Depends on: Engine.Input, Engine.Audio, Engine.Storage (instantiated here);
+//             an active scene (held but not imported).
 // Used by: top-level bootstrap code in build/ and games/ subfolders.
 
 var Engine = Engine || {};
 
 class Game {
-  constructor(canvas) {
+  /**
+   * @param {HTMLCanvasElement} canvas - The canvas to render to.
+   * @param {object} [options]
+   * @param {string} [options.gameName] - If provided, becomes the namespace prefix
+   *   for Engine.storage. Keys saved via Engine.storage will be stored under
+   *   `${gameName}:${key}` in localStorage. Omit to use storage with raw keys.
+   */
+  constructor(canvas, options = {}) {
     if (!canvas || typeof canvas.getContext !== 'function') {
       throw new Error('Game requires a canvas element.');
     }
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.gameName = options.gameName || '';
     this.currentScene = null;
     this._pendingScene = null;
     this._lastFrameTime = 0;
@@ -22,6 +31,7 @@ class Game {
     // Create the engine singletons.
     Engine.input = new Engine.Input(canvas);
     Engine.audio = new Engine.Audio();
+    Engine.storage = new Engine.Storage(this.gameName);
   }
 
   /** Begin the requestAnimationFrame loop. Idempotent. */
