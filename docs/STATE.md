@@ -4,7 +4,7 @@ Last updated: 2026-05-13
 
 ## Current status
 
-Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), and Horses Teach Typing v1 (sources and build committed, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
+Five games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), Horses Teach Typing v1 (sources and build committed, visual verification pending), and Party House (sources committed, build pending manual upload, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
 
 Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
@@ -12,7 +12,25 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 ## What was done in the most recent session
 
-**Session 2026-05-13 (later, engine bundle work, verification, and convention codification):**
+**Session 2026-05-13 (latest, Party House):**
+
+1. **New game: Party House.** Single-scenario MVP study of UFO 50 #25 ("Party House" -- note the original title is *Party House*, not the colloquial transposition "House Party"). Deckbuilder where guests are cards in a rolodex; each day you throw a party, guests enter one at a time, generate popularity/cash/trouble, and the goal is four star guests at one successful party within 25 days. Trouble cap of 3 triggers a cop shutdown (no rewards). After a shutdown the player picks one guest type to ban from the next party (one rolodex instance is skipped for one party then returns). Nine guest types in this scope: three free starters (Old Friend, Wild Buddy, Rich Pal) and six shop guests (Cute Dog and Hippie for trouble removal, Auctioneer for Old-Friend-synergy cash, Rock Star for high pop with trouble, Celebrity and Dragon as the two star guests). Five starting house slots, expansion cost starts at $2 and scales by +1 per expansion to a max of $12.
+
+2. **Save state.** Persistent high-score record via `Engine.storage` under key `'best'` with shape `{ fewestDays: number|null, totalWins: number }`. `fewestDays` is updated only when the new run clears in fewer days than the prior best (or there is no prior best). `totalWins` increments on every successful clear. Displayed on the menu scene; new-record callout on the win screen. Game name passed to the Game constructor is `'party-house'` so the storage key is namespaced as `party-house:best`.
+
+3. **Two new scenes** under `games/party-house/scenes/`:
+   - `PHMenuScene` (`menu.js`). Title with pictographic house silhouette, flickering window light, animated music notes, drifting guest silhouettes at the bottom. Best-record panel renders only when a record exists.
+   - `PHMatchScene` (`match.js`). All gameplay lives here including the phase state machine, party simulation, shop UI, ban screen, win/lose end overlays, and PauseOverlay integration. No GameObjects: rendering is direct canvas calls per phase, since the game state is intrinsically discrete and turn-based. PauseOverlay wired with both `onRestart` (re-enters the match scene) and `onQuit` (back to menu).
+
+4. **No new scripts.** Party House does not need GameObject-attached behaviors -- the game state is scene-level. Compare to action games (Survivors, Clown Brawler) where many entities run per-frame logic.
+
+5. **Mouse-edge fix during pause.** Mouse "just-pressed" detection is now recomputed every frame including during pause, so a click made while paused is consumed on its own frame rather than firing as a phantom click on resume. This pattern should propagate to any future scene that mixes mouse input with PauseOverlay (Pong's eventual PauseOverlay retrofit, etc.).
+
+6. **Build pending manual upload.** The assembled `build/party-house.html` is ~85KB (engine bundle 46KB + pause-overlay 5KB + menu 5KB + match 30KB + bootstrap/HTML wrapper ~1KB). Per the large-payload safety rule, this exceeds the single-file API push threshold, so the source files were pushed and the build is delivered to Trevor for manual upload.
+
+7. **Registries updated.** `scenes/_registry.md` has new rows for PHMenuScene and PHMatchScene. No new entries needed in `scripts/_registry.md` since the game uses only the existing PauseOverlay utility.
+
+**Session 2026-05-13 (earlier, engine bundle work, verification, and convention codification):**
 
 1. **Engine bundle introduced.** `engine/engine.bundle.js` committed (commit `2c338bec`) as the canonical single-file representation of the engine. Concatenates the ten source files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`, `engine/signal-bus.js`, `engine/input.js`, `engine/script.js`, `engine/game-object.js`, `engine/scene.js`, `engine/audio.js`, `engine/storage.js`, `engine/game.js`) in the canonical concat order. Header records generation date, source SHAs at the time of generation, and a regeneration recipe explicit enough that future Claude can rebuild without consulting other docs. Vendored library inline comments were lightly condensed in the bundle to keep the artifact compact; behavior is identical to the source files and the header SHAs reference the canonical source files (not the bundle's condensed copies).
 
@@ -20,7 +38,7 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 3. **ADR-0016 added.** Documents the bundle as the canonical engine artifact, the rationale (avoiding ten per-session fetches, stale-build-fallback drift observed in the Horses Teach Typing session, and failed `raw.githubusercontent.com` dynamic fetches), the choice of "bundle in repo plus mirror in project knowledge" over "project knowledge only" or "per-file fetch with manifest," and consequences including the regeneration-on-engine-commit obligation.
 
-4. **ARCHITECTURE.md updated.** The bundle is listed in the file layout summary, mentioned in the overview prose, and noted in the build concatenation order section (a build may inline the bundle in place of steps 1–10).
+4. **ARCHITECTURE.md updated.** The bundle is listed in the file layout summary, mentioned in the overview prose, and noted in the build concatenation order section (a build may inline the bundle in place of steps 1-10).
 
 5. **Project bootstrap regenerated.** `docs/project-bootstrap.md` committed (commit `a794c205`) as the canonical repo copy. Updates the bootstrap to reflect current state: eight engine modules, vendored libs, the bundle artifact, ADRs 0001-0016, four shipped games, ShapeSprite as the sprite primitive, PauseOverlay convention, experimental-probe framing, dead-file convention, and the large-payload safety check. The repo file is the source for future regenerations; the project knowledge upload is where fresh Claude sessions actually load from.
 
@@ -32,7 +50,7 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 9. **Operational notes.** Two earlier attempts at a single atomic five-file commit failed to complete the response due to combined payload size (bundle plus four doc files at ~115KB total). The work was split into commits (bundle, smaller docs, DECISIONS.md) to fit within response-length limits. A memory rule was added to check in with the user before tool calls with very large payloads.
 
-**Session 2026-05-13 (earlier, Horses Teach Typing):**
+**Session 2026-05-13 (earlier still, Horses Teach Typing):**
 
 1. **New game: Horses Teach Typing v1.** Rhythm typing where letters scroll right-to-left toward a fixed hit zone next to a horse silhouette. Black-on-white Apple II Oregon Trail aesthetic. Minimal English on the menu beyond the title. Scope was deliberately small per direction from Trevor: minimal UI, start menu, pause menu (volume + restart), base rhythm mechanic. No score screen, no progression, no music, no horse hint-bubble (deferred to v2).
 
@@ -56,20 +74,24 @@ See prior STATE entries: engine (signal-bus, input, script, game-object, scene, 
 
 1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo; needs browser load to confirm.
 2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo; needs browser load to confirm.
+3. **Visual verification of `build/party-house.html`** (from 2026-05-13 latest). Build assembled locally and delivered to Trevor for manual upload; needs upload then browser load to confirm.
 
 ## Next up
 
-1. **(In progress)** Visual verification of the two pending builds above.
+1. **(In progress)** Visual verification of the three pending builds above.
 
-2. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
+2. **Party House v2 candidates** (post-verification): hover tooltips on guest cards with full ability description, party-flow animation (guests slide in rather than appear), end-of-day balance sheet (cumulative pop/cash earned), a "view rolodex" toggle on the shop screen, second scenario unlocked after first clear, randomization of starting rolodex shuffle visible to player.
 
-3. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+3. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
 
-4. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+4. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+
+5. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
    - **Conductor primitive.** The clock/spawn-cursor pattern in HTTMatchScene is similar to the wave-spawn pattern in SurvivorsMatchScene. A shared `Conductor` or `Scheduler` script could host beat-locked or interval-locked event scheduling.
    - **Real spawner script.** Replaces inlined spawn logic in `SurvivorsMatchScene._spawnEnemy`.
    - **Signal-driven animation player.** Decouples animation state changes from per-script update logic.
    - **Generic health/damage script.** Centralizes the HP, damage, death-emit pattern.
+   - **Mouse-edge detector.** Three games would now benefit from a clean "just-clicked" abstraction layered on `Engine.input.mouse.left`. Could go on Engine.input itself, or as a tiny helper class.
 
 ## Deferred to shipping mode
 
@@ -79,6 +101,7 @@ Real items, blocked behind ADR-0013.
 - **Survivors**: jsfxr SFX. Also: persist stats and coins via `Engine.storage`.
 - **Clown Brawler**: any further visual upgrades after v2.
 - **Horses Teach Typing**: progression curve, high-score, keyboard-hint bubble, optional music asset path.
+- **Party House**: additional scenarios (the original has five plus a random scenario), more guest types (the original has ~30), Driver/PI/Genie fetch abilities, Photographer copy-effect, Climber scaling popularity, full ban-by-instance UI showing specific guests rather than types, mid-party "end now" decision support including animations.
 - **Common scenes**: shared credits, loading, and main-menu templates.
 
 ## Deferred housekeeping (tool-gated)
@@ -95,6 +118,7 @@ Real items, blocked behind ADR-0013.
 - **Asset sourcing for the eventual raster path**: carrying over from prior session.
 - **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
 - **poc-square v1 disposition**: now that v2 is verified and is the canonical bundle-inlining reference, the v1 build (`build/poc-square.html`, ~8KB) could be marked DEAD or kept as the documented "individual-module path" example. Recommendation: keep as the example reference per the new CONVENTIONS.md section, since it cleanly shows the alternate path.
+- **Party House art direction**: the MVP uses flat colored cards with text labels. The original is pixel art. Future iterations could either commit to a small ShapeSprite-based character set or stay with the abstract card aesthetic (which arguably reads more clearly at any zoom level than a faithful pixel rendition would).
 
 ## Sprite generator retirement note
 
@@ -109,9 +133,11 @@ The original sprite generator concept is retired. The forward path is the proced
 - **Bundle cost trade-off** for games that do not use audio or storage: the bundle adds ~37KB of jsfxr code and a few KB of audio/storage modules even if the game never calls them. For poc-square this took the build from 8KB to 45KB. For non-trivial games (Pong, Survivors, etc., already at ~45KB with the individual-module path), the trade is roughly neutral. If a future game wants the smallest possible build and does not use audio or storage, the individual-module path remains valid per CONVENTIONS.md.
 - **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP only (no bash, no local file creation, no present-files). Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response. Past sessions have succeeded at single 45-60KB pushes; the rule is about asking before attempting larger ones.
 - **Horses Teach Typing concat order** (individual-module path, used at the time of the HTT build): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'horses-teach-typing' })`, then `game.setScene(new HTTMenuScene(game))`, then `game.start()`. Going forward, equivalent builds use the bundle-inlining path.
+- **Party House concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'party-house' })`, then `game.setScene(new PHMenuScene(game))`, then `game.start()`.
 - **PauseOverlay row layout**: data-driven now. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`. Existing semantics (RESUME, AUDIO with volume+mute, optional RESTART, optional QUIT) preserved.
 - **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism. Compare to dt-driven movement: it converges over long runs but can drift over many frames with variable dt.
 - **Auto-miss policy**: `cutoff = goodWindow + 0.05` (= 230ms past target). Tunable. The +50ms cushion gives the player a slight overshoot zone past 'good' before the letter is locked into a miss.
 - **Build verification step convention**: prior sessions ran `node --check` on the extracted script tag of the assembled build. This is unavailable when bash is not in the tool surface; the fallback is per-source-file validation before assembly plus visual verification on browser load.
 - **Engine.storage usage pattern**: bootstrap with `new Engine.Game(canvas, { gameName: 'mygame' })`; thereafter `Engine.storage.save('key', value)` / `Engine.storage.load('key')`.
+- **Pause + mouse-edge interaction**: any scene that mixes PauseOverlay with mouse-click input should compute `_mouseClicked = !_prevMouseLeft && Engine.input.mouse.left` followed by `_prevMouseLeft = Engine.input.mouse.left` BEFORE the `if (this._pause.isPaused()) return;` early-return, so that clicks made while paused are consumed on their own frame and do not fire as phantom clicks on resume. PHMatchScene is the reference implementation.
 - **Dead files**: run `grep -r DEAD-FILE` to find every parked file. Convention in `docs/DEAD_FILES.md`.
