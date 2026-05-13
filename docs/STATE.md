@@ -1,52 +1,54 @@
 # State
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ## Current status
 
-Three games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 assembled locally this session, awaiting manual upload and verification). Plus `poc-square` as an engine smoke test. The engine, audio service, collision contract, pause utility, persistent storage, and procedural Shape DSL sprite primitive (`ShapeSprite`) are settled.
+Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 assembled locally and pending manual upload from the prior session), and Horses Teach Typing v1 (sources committed this session; build pending manual upload). Plus `poc-square` as an engine smoke test. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, and procedural Shape DSL sprite primitive (`ShapeSprite`) are settled.
 
-Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts: the original Clown Brawler stays as `build/clown-brawler.html`, the refactor lands at `build/clown-brawler-v2.html`.
+Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
 A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 ## What was done in the most recent session
 
-**Session 2026-05-12 (this session):**
+**Session 2026-05-13 (this session):**
 
-1. **ADR-0013** added: experimental-probe framing for in-development games.
-2. **STATE.md restructured**: engine-oriented "Next up," "Deferred to shipping mode" section, retirement of the original pixel-grid sprite generator.
-3. **Dead-file convention established** in `docs/DEAD_FILES.md`. Two dead files marked.
-4. **ADR-0014** added: persistent storage via `Engine.Storage` with Game-configured namespace.
-5. **`engine/storage.js`** added; **`engine/game.js`** updated to instantiate it.
-6. **ADR-0015** added: procedural Shape DSL sprite primitive design.
-7. **`scripts/shape-sprite.js`** added: `Engine.ShapeSprite` Script.
-8. **CLAUDE.md §4** updated to record SVG-generation weakness alongside pixel-grid.
-9. **Build sibling-iteration convention** added to CONVENTIONS.md: iterations get `build/<game>-v2.html`, v3, etc., rather than overwriting. Applies to any iterated build artifact in the repo, not just games.
-10. **`docs/ARCHITECTURE.md`** clarified: build concatenation order rule for scripts that reference other scripts via the `Engine` namespace (relevant now that ShapeSprite is referenced by character scripts).
-11. **Clown Brawler character scripts refactored to use `ShapeSprite`**:
-    - `games/clown-brawler/scripts/clown-player.js`: `_drawBody` lifted into module-level `_drawClownBody`; animations `idle`, `punch`, `dying` defined as ShapeSprite states. ClownPlayer constructs a sprite internally, drives `play()` on state changes, sets `setFlipX` per facing, and applies effect alpha in its own `draw()` before forwarding to `sprite.draw()`. Public API and signal contract unchanged.
-    - `games/clown-brawler/scripts/gorilla-enemy.js`: similar pattern. Animations `walking` (bob cycle), `attacking`, `stunned`, `dying` (animated tilt). Per-instance balloon color closed-over via factory function. Public API and signal contract unchanged.
-    - `games/clown-brawler/scripts/floating-balloon.js`: single static `drift` animation. Position and alpha driven by the script.
-12. **`build/clown-brawler-v2.html` assembled locally** (62KB, 976 lines, 15 classes; `node --check` passes). Presented for manual upload. Includes the new `storage.js` engine module, the updated `game.js` (constructor takes `(canvas, options)` with `options.gameName`), the new `shape-sprite.js`, the three refactored character scripts, and a bootstrap that passes `{ gameName: 'clown-brawler' }`. The two scenes (`clown-menu.js`, `clown-match.js`) are functionally unchanged from v1.
+1. **New game: Horses Teach Typing v1.** Rhythm typing where letters scroll right-to-left toward a fixed hit zone next to a horse silhouette. Black-on-white Apple II Oregon Trail aesthetic. Minimal English on the menu beyond the title. Scope was deliberately small per direction from Trevor: minimal UI, start menu, pause menu (volume + restart), base rhythm mechanic. No score screen, no progression, no music, no horse hint-bubble (deferred to v2).
+
+2. **PauseOverlay extension.** `scripts/pause-overlay.js` now accepts an optional `onRestart` callback in addition to the existing `onQuit`. Row layout is data-driven: RESUME and AUDIO always present; RESTART present only if `onRestart` provided; QUIT present only if `onQuit` provided. The panel height scales with row count so a 4-row layout doesn't crowd. Existing callers (`SurvivorsMatchScene`) pass only `onQuit` and are unaffected: same 3-row appearance.
+
+3. **New script:** `RhythmLetter` (`games/horses-teach-typing/scripts/rhythm-letter.js`). Owns one letter character, a spawn time, and a target hit time. Position is time-driven (`x === hitZoneX` exactly when `scene.conductorTime === targetTime`), making the game frame-rate-independent. State machine: alive -> judged -> dead. On entering `judged`, runs a 0.5s feedback animation (floats up, fades out) showing the judgement label, then emits `htt_letter_dead` for the scene to remove the host GameObject.
+
+4. **New scenes:**
+   - `HTTMenuScene` (`games/horses-teach-typing/scenes/htt-menu.js`). Pictographic title screen. Distant mountain silhouette, trail/ground line, animated horse silhouette with subtle head-bob, mini mechanic demo (three letters A/S/D continuously approaching a bracket pictograph), blinking SPACE bar pictograph at the bottom. SPACE or ENTER transitions to match with a 0.35s fade.
+   - `HTTMatchScene` (`games/horses-teach-typing/scenes/htt-match.js`). Core gameplay. 90 BPM conductor advancing at dt per frame, spawns letters at beat-locked times with a 2s lead time. Judgement windows: perfect <=60ms, great <=120ms, good <=180ms, otherwise auto-miss after target+50ms cushion. Scoring: perfect 300, great 200, good 100. Lenient input policy: wrong-key or out-of-window presses are ignored; only letters that pass the hit zone are auto-missed. HUD: SCORE (left), BPM (center), COMBO (right), recent-judgement banner above the hit zone. SFX: `htt-perfect` (laserShoot), `htt-good` (pickupCoin), `htt-miss` (hitHurt) registered in `enter()`. Pause overlay wired with both `onRestart` (re-enters the match scene) and `onQuit` (back to menu).
+
+5. **Build assembly pending.** The build HTML file (`build/horses-teach-typing.html`) is being assembled and pushed in a follow-up commit. Concat order matches the established convention: lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap passes `{ gameName: 'horses-teach-typing' }` to the Game constructor so storage is namespaced if v2 adds persistence (e.g., high score).
+
+6. **Registries updated.** `scripts/_registry.md` has a revised PauseOverlay description (mentions onRestart) and a new RhythmLetter row. `scenes/_registry.md` has new HTTMenuScene and HTTMatchScene rows.
 
 ## Previously done
 
-See prior STATE entries: engine (signal-bus, input, script, game-object, scene, game, audio), Pong, PauseOverlay, Survivors v1-v3, Clown Brawler initial build (v1), SpriteSheet script.
+See prior STATE entries: engine (signal-bus, input, script, game-object, scene, game, audio, storage), Pong, PauseOverlay original, Survivors v1-v3, Clown Brawler v1 and v2 (the v2 build is awaiting manual upload from the 2026-05-12 session), SpriteSheet and ShapeSprite scripts.
 
 ## Currently in progress
 
-**Awaiting manual upload and visual verification of `build/clown-brawler-v2.html`.** Source for v2 is committed; the assembled HTML lives in the local outputs area of the session and needs to be uploaded by Trevor (per the established convention for build files too large to push reliably via the GitHub API). Visual goal: zero observable change from v1; the refactor is structural.
+1. **Awaiting manual upload and visual verification of `build/clown-brawler-v2.html`** (from prior session). Carrying over.
+2. **Awaiting manual upload and visual verification of `build/horses-teach-typing.html`** (this session). The HTML is being assembled and pushed via the API rather than presented locally because the local file/bash tools were not available this turn; if the push fails due to size, fall back to manual upload following the established convention.
 
 ## Next up
 
-1. **(In progress)** Upload and verify `build/clown-brawler-v2.html`. Once visually verified (no regression versus v1), decide whether to mark `build/clown-brawler.html` (v1) DEAD or keep it as a reference build per the open question below.
+1. **(In progress)** Upload and verify the two pending builds.
 
-2. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Konva's `Sprite` API expects a raster sheet (PNG with frame rectangles); using it (or a similar raster-driven approach) requires a source of hand-made sprite sheets. Open questions: where to host raster assets (in-repo `assets/` folder, separate fork, or external CC0/CC-BY sources like OpenGameArt or Kenney), how to embed them in single-file HTML builds (base64 data URIs, similar to audio embedding), what the integration shape would be (extend `SpriteSheet`, wrap Konva, build a thin raster-sheet Script). Not actionable until v2 is verified and the user gives direction on asset sourcing.
+2. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
 
-3. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+3. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+
+4. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+   - **Conductor primitive.** The clock/spawn-cursor pattern in HTTMatchScene is similar to the wave-spawn pattern in SurvivorsMatchScene. A shared `Conductor` or `Scheduler` script could host beat-locked or interval-locked event scheduling.
    - **Real spawner script.** Replaces inlined spawn logic in `SurvivorsMatchScene._spawnEnemy`.
-   - **Signal-driven animation player.** Decouples animation state changes from per-script update logic. Particularly useful now that Clown Brawler v2 has multiple ShapeSprite-driven characters.
+   - **Signal-driven animation player.** Decouples animation state changes from per-script update logic.
    - **Generic health/damage script.** Centralizes the HP, damage, death-emit pattern.
 
 ## Deferred to shipping mode
@@ -55,7 +57,8 @@ Real items, blocked behind ADR-0013.
 
 - **Pong**: PauseOverlay retrofit, then regenerate `build/pong-v2.html` (per the sibling-iteration convention).
 - **Survivors**: jsfxr SFX. Also: persist stats and coins via `Engine.storage`.
-- **Clown Brawler**: any further visual upgrades after v2. Could become v3 if the raster path (next-up #2) lands and gets adopted.
+- **Clown Brawler**: any further visual upgrades after v2.
+- **Horses Teach Typing**: progression curve, high-score, keyboard-hint bubble, optional music asset path.
 - **Common scenes**: shared credits, loading, and main-menu templates.
 
 ## Deferred housekeeping (tool-gated)
@@ -69,22 +72,20 @@ Real items, blocked behind ADR-0013.
 
 ## Open questions
 
-- **Asset sourcing for the eventual raster path** (next-up #2): in-repo `assets/` folder vs. external host vs. CC0 sources like OpenGameArt or Kenney. Affects build size, license accounting, and offline behavior.
-- **Clown Brawler v1 disposition once v2 is verified**: keep as reference build, mark DEAD, or delete via `GitHub:delete_file` when available. Default per the sibling convention is to mark DEAD once v2 is verified, but Trevor may want to retain v1 longer for side-by-side comparison while iterating further.
+- **Asset sourcing for the eventual raster path**: carrying over from prior session.
+- **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
 
 ## Sprite generator retirement note
 
-The original sprite generator concept (Claude-powered in-browser tool emitting 2D integer pixel grids per frame) is retired. The forward path is the procedural Shape DSL (`ShapeSprite`, per ADR-0015), now implemented and exercised in Clown Brawler v2's character scripts.
-
-The `sprite-generator.html` artifact from the earlier session is left as-is (not maintained, not deleted). The `scripts/sprite-sheet.js` runtime remains available for raster sprite sheets if the Konva-style path lands.
+The original sprite generator concept is retired. The forward path is the procedural Shape DSL (`ShapeSprite`, per ADR-0015).
 
 ## Notes for the next session
 
-- **ShapeSprite owned vs attached**: in Clown Brawler v2, character scripts (ClownPlayer, GorillaEnemy, FloatingBalloon) construct a ShapeSprite as a private member (`this._sprite = new Engine.ShapeSprite(host, ...)`) but do not attach it to `host.scripts`. The character script drives the sprite's lifecycle directly (calls `this._sprite.update(dt)` and `this._sprite.draw(ctx)`). This pattern is now documented in ARCHITECTURE.md's Script section. The benefit is deterministic draw ordering and the ability to layer effects (alpha flicker, fade) around the sprite draw call. The cost is one extra `update(dt)` / `draw(ctx)` forwarding call per character.
-- **ShapeSprite usage pattern**: instantiate as `new Engine.ShapeSprite(host, { initialAnim: 'idle', animations: { idle: { duration: 1.0, loop: true, draw: (ctx, { t }) => { /* canvas calls */ } }, ... } })`.
-- **Per-instance animation params** (e.g., gorilla balloon color): use a factory function that closes over the per-instance value and returns the animations object. See `_gorillaAnimations(balloonColor)` in `games/clown-brawler/scripts/gorilla-enemy.js`.
-- **Build for v2** uses the concat order: lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, shape-sprite, clown-player, gorilla-enemy, floating-balloon, clown-menu, clown-match, bootstrap. Bootstrap passes `{ gameName: 'clown-brawler' }` to the Game constructor so storage is namespaced if v2 (or v3) starts using it.
-- **Clown Brawler scene** (`games/clown-brawler/scenes/clown-match.js`): NOT modified. The scene instantiates character scripts with the same signatures and attaches them the same way; the refactor is entirely internal to the character scripts.
-- **Engine.storage usage pattern**: bootstrap a game with `new Engine.Game(canvas, { gameName: 'mygame' })`; thereafter `Engine.storage.save('stats', obj)` / `Engine.storage.load('stats')` round-trip JSON-serializable values with automatic `mygame:stats` keying.
-- **Survivors difficulty tuning** lives in `_getSpawnInterval`, `_getEnemyTypePool`, and `_getEnemyConfig` inside `survivors-match.js`. Not a current priority.
+- **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP + Google Drive metadata only (no bash, no local file creation, no present-files). The Horses Teach Typing build had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. If the build push failed for size reasons, the assembled HTML lives in this session's transcript and can be recovered for manual upload.
+- **Horses Teach Typing concat order**: lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'horses-teach-typing' })`, then `game.setScene(new HTTMenuScene(game))`, then `game.start()`.
+- **PauseOverlay row layout**: data-driven now. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`. Existing semantics (RESUME, AUDIO with volume+mute, optional RESTART, optional QUIT) preserved.
+- **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism. Compare to dt-driven movement: it converges over long runs but can drift over many frames with variable dt.
+- **Auto-miss policy**: `cutoff = goodWindow + 0.05` (= 230ms past target). Tunable. The +50ms cushion gives the player a slight overshoot zone past 'good' before the letter is locked into a miss.
+- **Build verification step convention**: prior sessions ran `node --check` on the extracted script tag of the assembled build. This session did the equivalent only on the source files locally before the tool environment changed; the build HTML push relies on each individual source file having passed `node --check` and on the concat order matching what was used successfully for Clown Brawler v2.
+- **Engine.storage usage pattern**: bootstrap with `new Engine.Game(canvas, { gameName: 'mygame' })`; thereafter `Engine.storage.save('key', value)` / `Engine.storage.load('key')`.
 - **Dead files**: run `grep -r DEAD-FILE` to find every parked file. Convention in `docs/DEAD_FILES.md`.
