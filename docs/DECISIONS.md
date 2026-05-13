@@ -210,3 +210,36 @@ Option 2 was chosen as the immediate path, with option 3 (later add SVG-rasteriz
 - **Integration**: Clown Brawler's existing inline drawing is the natural first conversion target. No visual change expected; the goal is converting ad-hoc per-script drawing into reusable infrastructure with a uniform animation lifecycle. Queued as a follow-up commit per the experimental-probe framing of ADR-0013.
 - **SVG-rasterize remains deferred**, not retired. If a game ever needs visual fidelity beyond canvas primitives (shading, gradients, complex curves not worth drawing imperatively), SVG-rasterize can be added as a sibling tool that produces input to `SpriteSheet`. No architectural change required.
 - **Konva.Sprite API integration** is flagged as a separate future investigation. It would require imported raster sheets, which raises asset-sourcing questions (in-repo folder, third-party fork, or external host) that the user has flagged for revisit after Shape DSL is exercised.
+
+## ADR-0016: Engine bundle as canonical single-file source artifact
+
+Date: 2026-05-13
+
+**Decision**: A committed file `engine/engine.bundle.js` is maintained as the canonical single-file representation of the engine, regenerated as a mandatory step of any commit that touches an engine module (`engine/*.js` or `engine/lib/*.js`). Fresh Claude sessions fetch this one file to obtain the current engine source instead of fetching the ten individual modules separately or extracting from a stale inlined copy in an old game build. A copy is also uploaded to Claude Project knowledge as a parallel optimization, refreshed manually by the user as engine modules change.
+
+**Context**: The engine is split across ten files (eight modules under `engine/` plus two vendored libraries under `engine/lib/`) and must be concatenated in a specific order to be usable (ADR-0011 and ADR-0014 define the order; ARCHITECTURE.md records it in full). Fresh sessions need the current engine source to build games and engine-adjacent tools. The pre-existing workflow had three problems, all observed in the 2026-05-13 Horses Teach Typing session:
+
+1. *Per-file fetches.* Ten `GitHub:get_file_contents` calls per session, each with non-trivial token overhead.
+2. *Stale build fallback.* Sessions sometimes attempted to reuse the inlined engine from an existing game build (e.g., `build/survivors.html`), but games are built at different points in time and may inline an outdated engine version. In the Horses Teach Typing session, the inlined `game.js` in `build/survivors.html` predated ADR-0014 and did not match the current engine, forcing additional fetches and reasoning about which version was authoritative.
+3. *Sandbox-restricted dynamic fetches.* Sessions sometimes attempted `raw.githubusercontent.com` URLs via bash, which fail because the host is not in the sandbox allowlist. This wastes turns on a failed approach before falling back to the MCP path.
+
+The bundle file collapses all three failure modes into a single MCP fetch with header-recorded SHAs for drift detection.
+
+Three options were considered:
+
+1. **Bundle in repo only**. Commit `engine/engine.bundle.js`. Future Claude fetches one file. Drift is mitigated by the regeneration-on-engine-commit rule and by the SHA list in the bundle header (mismatch is detectable by comparing header SHAs to the live `engine/` directory listing).
+2. **Bundle in project knowledge only**. Manual upload by the user; zero fetches at session start. Pro: lowest token cost when fresh. Con: project knowledge does not auto-sync from the repo, so the snapshot can be arbitrarily stale and Claude cannot detect staleness during a session.
+3. **Hybrid: bundle in repo plus mirror in project knowledge (chosen)**. Bundle in repo is the source of truth. Mirror in project knowledge is an additional optimization: when fresh, sessions have the engine already in context; when stale, the repo bundle is one fetch away. The mirror is a manual upload the user performs after engine commits.
+
+Option 3 was chosen because the repo bundle provides the canonical, always-current artifact while the project knowledge mirror provides the best-case zero-fetch path. Option 2 alone was rejected because staleness in project knowledge cannot be detected by Claude during a session.
+
+**Consequences**:
+
+- The repo now contains a committed artifact (`engine/engine.bundle.js`) whose contents are mechanically derivable from the source files. This is an intentional exception to the general "code is the source, build artifacts are not committed" pattern. The exception is justified by the MCP-fetchability requirement that motivates the bundle.
+- Every commit that touches an engine module (`engine/*.js` or `engine/lib/*.js`) must regenerate the bundle in the same commit. CLAUDE.md §8 carries this rule. The bundle's own header documents the regeneration recipe.
+- The header records generation date and a SHA for each source file at generation time. A mismatch between header SHAs and the live `engine/` listing is the detection mechanism for missed regenerations.
+- Adding or removing an engine module requires updating three things in the same commit: the bundle (regenerated), the bundle header (module list), and ARCHITECTURE.md's "Build concatenation order" section.
+- Game builds (`build/<game>.html`) may continue to inline the individual source files in the canonical order, or may switch to inlining the bundle. The two approaches produce equivalent output. Build scripts that already work do not need to change.
+- The bundle is engine-only. Engine-adjacent code (scripts, scenes, games) is not included. If a similar one-fetch pattern is later wanted for a heavily-shared scripts library (`PauseOverlay`, `ShapeSprite`, etc.), a separate bundle can be added by a future ADR.
+- The user manually uploads the bundle to Claude Project knowledge as the parallel optimization. The repo bundle remains the authoritative source; the project knowledge mirror is a best-effort cache. Sessions trust the in-context copy unless they have reason to suspect drift, in which case they verify by fetching the repo bundle.
+- A note on the bundle's verbatim faithfulness: the 2026-05-13 initial bundle has lightly condensed inline comments in the vendored library files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`) for compactness. All executable code is preserved verbatim. The header SHAs reference the canonical source files, not the bundle's slightly trimmed copies. Future regenerations may either preserve this trimming convention or restore full comments; either is acceptable as long as runtime behavior is unchanged.
