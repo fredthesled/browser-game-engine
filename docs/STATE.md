@@ -4,7 +4,7 @@ Last updated: 2026-05-13
 
 ## Current status
 
-Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed and uploaded to project knowledge, visual verification pending), and Horses Teach Typing v1 (sources and build committed; uploaded to project knowledge, visual verification pending). Plus `poc-square` as an engine smoke test, now with a v2 sibling build exercising the engine-bundle workflow (verification pending). The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), and canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016) are settled.
+Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed and uploaded to project knowledge, visual verification pending), and Horses Teach Typing v1 (sources and build committed; uploaded to project knowledge, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
 
 Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
@@ -12,7 +12,7 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 ## What was done in the most recent session
 
-**Session 2026-05-13 (later, engine bundle work and verification setup):**
+**Session 2026-05-13 (later, engine bundle work, verification, and convention codification):**
 
 1. **Engine bundle introduced.** `engine/engine.bundle.js` committed (commit `2c338bec`) as the canonical single-file representation of the engine. Concatenates the ten source files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`, `engine/signal-bus.js`, `engine/input.js`, `engine/script.js`, `engine/game-object.js`, `engine/scene.js`, `engine/audio.js`, `engine/storage.js`, `engine/game.js`) in the canonical concat order. Header records generation date, source SHAs at the time of generation, and a regeneration recipe explicit enough that future Claude can rebuild without consulting other docs. Vendored library inline comments were lightly condensed in the bundle to keep the artifact compact; behavior is identical to the source files and the header SHAs reference the canonical source files (not the bundle's condensed copies).
 
@@ -26,9 +26,11 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 6. **Project knowledge uploads completed by Trevor.** The regenerated `project-bootstrap.md` replaced the prior bootstrap. `engine/engine.bundle.js` was added as a new file (the parallel optimization per ADR-0016 option 3). Trevor also uploaded the four recent game builds (Pong, Survivors, Clown Brawler v2, Horses Teach Typing) as supplementary reference material, with the understanding that this contradicts the rule about not extracting engine code from old builds but is acceptable for using games as reference (a different use case). Files may be pruned later if loading them at session start becomes a token-budget issue.
 
-7. **Engine bundle workflow tested via `build/poc-square-v2.html`.** Committed (commit `90fd0485`) as a sibling iteration of the original poc-square build. Inlines `engine/engine.bundle.js` as a single block in place of concatenating the ten individual engine modules, then layers the same game-specific scripts and scenes on top. Verifies the bundle is a functional drop-in. Size went from 8KB (v1, pre-audio/storage) to 45KB (v2, with the full modern engine) because the bundle includes audio.js and storage.js even though poc-square does not exercise them. This trade-off is documented in the build header.
+7. **Engine bundle workflow tested via `build/poc-square-v2.html`.** Committed (commit `90fd0485`) as a sibling iteration of the original poc-square build. Inlines `engine/engine.bundle.js` as a single block in place of concatenating the ten individual engine modules, then layers the same game-specific scripts and scenes on top. Trevor visually verified the v2 build behaves identically to v1 (teal square responds to arrow keys, clean console). The bundle is validated as a drop-in for individual-module concatenation. Size went from 8KB (v1, pre-audio/storage) to 45KB (v2, with the full modern engine) because the bundle includes audio.js and storage.js even though poc-square does not exercise them. This trade-off is documented in the build header.
 
-8. **Operational notes.** Two earlier attempts at a single atomic five-file commit failed to complete the response due to combined payload size (bundle plus four doc files at ~115KB total). The work was split into commits (bundle, smaller docs, DECISIONS.md) to fit within response-length limits. A memory rule was added to check in with the user before tool calls with very large payloads.
+8. **Build-assembly convention codified.** `docs/CONVENTIONS.md` updated with a new "Build assembly (bundle-inlining convention)" section establishing bundle inlining as the default for new builds, with `build/poc-square-v2.html` as the canonical reference template. The section also documents when the individual-module path remains appropriate (minimal POCs not using audio/storage, diagnostic builds). Replaces no prior convention; existing builds are unaffected.
+
+9. **Operational notes.** Two earlier attempts at a single atomic five-file commit failed to complete the response due to combined payload size (bundle plus four doc files at ~115KB total). The work was split into commits (bundle, smaller docs, DECISIONS.md) to fit within response-length limits. A memory rule was added to check in with the user before tool calls with very large payloads.
 
 **Session 2026-05-13 (earlier, Horses Teach Typing):**
 
@@ -54,19 +56,16 @@ See prior STATE entries: engine (signal-bus, input, script, game-object, scene, 
 
 1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo and project knowledge; needs browser load to confirm.
 2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo and project knowledge; needs browser load to confirm.
-3. **Visual verification of `build/poc-square-v2.html`** (from this session's bundle-workflow test). Load in browser; expected behavior is identical to v1 (teal square responds to arrow keys, no console errors). If v2 behaves identically to v1, the bundle workflow is validated as a drop-in for individual-module concatenation. If v2 misbehaves where v1 worked, the bundle has a subtle issue worth investigating before adopting it as the default build pattern.
 
 ## Next up
 
-1. **(In progress)** Visual verification of the three pending builds above.
+1. **(In progress)** Visual verification of the two pending builds above.
 
-2. **Adopt the bundle workflow as default for new builds** (once `poc-square-v2` is verified). Update CONVENTIONS.md or the build-assembly action recipe in project-bootstrap.md to recommend bundle inlining over individual-module concatenation. Existing builds do not need regeneration unless an engine change requires it.
+2. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
 
-3. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
+3. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
 
-4. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
-
-5. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+4. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
    - **Conductor primitive.** The clock/spawn-cursor pattern in HTTMatchScene is similar to the wave-spawn pattern in SurvivorsMatchScene. A shared `Conductor` or `Scheduler` script could host beat-locked or interval-locked event scheduling.
    - **Real spawner script.** Replaces inlined spawn logic in `SurvivorsMatchScene._spawnEnemy`.
    - **Signal-driven animation player.** Decouples animation state changes from per-script update logic.
@@ -96,6 +95,7 @@ Real items, blocked behind ADR-0013.
 - **Asset sourcing for the eventual raster path**: carrying over from prior session.
 - **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
 - **Game builds in project knowledge**: Trevor uploaded the four recent builds as supplementary reference. Watch for whether they earn their token cost (each session loads them into context). Prune unused ones if context budget starts to feel tight.
+- **poc-square v1 disposition**: now that v2 is verified and is the canonical bundle-inlining reference, the v1 build (`build/poc-square.html`, ~8KB) could be marked DEAD or kept as the documented "individual-module path" example. Recommendation: keep as the example reference per the new CONVENTIONS.md section, since it cleanly shows the alternate path.
 
 ## Sprite generator retirement note
 
@@ -104,10 +104,11 @@ The original sprite generator concept is retired. The forward path is the proced
 ## Notes for the next session
 
 - **Engine bundle is the canonical engine fetch target.** Per ADR-0016, fetch `engine/engine.bundle.js` for current engine source; do not reconstruct from individual modules and do not extract from old build files. The bundle header includes a SHA list for each source file at generation time, so drift relative to live `engine/` content is detectable by listing the engine directory and comparing. Any commit that touches an engine module must regenerate the bundle in the same commit (CLAUDE.md §8).
-- **`poc-square-v2` is the reference for the bundle-inlining build pattern.** When assembling a new game build, the cleaner path is now: bundle as a single block, then game-specific scripts, then scenes, then bootstrap. The v2 build header documents this explicitly and lists the bundle and source SHAs at the time of assembly. Read it as a template before writing a new build.
-- **Bundle cost trade-off** for games that do not use audio or storage: the bundle adds ~37KB of jsfxr code and a few KB of audio/storage modules even if the game never calls them. For poc-square this took the build from 8KB to 45KB. For non-trivial games (Pong, Survivors, etc., already at ~45KB with the individual-module path), the trade is roughly neutral. If a future game wants the smallest possible build and does not use audio or storage, the individual-module path remains valid.
+- **Bundle inlining is the default build-assembly path.** Per CONVENTIONS.md ("Build assembly" section) and validated against `build/poc-square-v2.html` against `build/poc-square.html`, new game builds inline the bundle as a single block, then layer scripts, scenes, and bootstrap. The individual-module path is reserved for minimal POCs that do not use audio or storage, or for diagnostic builds.
+- **`poc-square-v2` is the reference template for the bundle-inlining build pattern.** Its header documents the inlined files and their blob SHAs at the time of assembly. Read it as a template before writing a new build.
+- **Bundle cost trade-off** for games that do not use audio or storage: the bundle adds ~37KB of jsfxr code and a few KB of audio/storage modules even if the game never calls them. For poc-square this took the build from 8KB to 45KB. For non-trivial games (Pong, Survivors, etc., already at ~45KB with the individual-module path), the trade is roughly neutral. If a future game wants the smallest possible build and does not use audio or storage, the individual-module path remains valid per CONVENTIONS.md.
 - **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP only (no bash, no local file creation, no present-files). Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response. Past sessions have succeeded at single 45-60KB pushes; the rule is about asking before attempting larger ones.
-- **Horses Teach Typing concat order** (individual-module path): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'horses-teach-typing' })`, then `game.setScene(new HTTMenuScene(game))`, then `game.start()`.
+- **Horses Teach Typing concat order** (individual-module path, used at the time of the HTT build): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'horses-teach-typing' })`, then `game.setScene(new HTTMenuScene(game))`, then `game.start()`. Going forward, equivalent builds use the bundle-inlining path.
 - **PauseOverlay row layout**: data-driven now. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`. Existing semantics (RESUME, AUDIO with volume+mute, optional RESTART, optional QUIT) preserved.
 - **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism. Compare to dt-driven movement: it converges over long runs but can drift over many frames with variable dt.
 - **Auto-miss policy**: `cutoff = goodWindow + 0.05` (= 230ms past target). Tunable. The +50ms cushion gives the player a slight overshoot zone past 'good' before the letter is locked into a miss.

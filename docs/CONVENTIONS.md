@@ -21,6 +21,30 @@ Established 2026-05-12 in this session.
 - The convention applies to material changes (refactors, new features, significant visual or gameplay revisions). Trivial fixes (a single typo, a one-line balance tweak) can overwrite without versioning if the difference is not worth preserving.
 - The same convention applies to AI-powered artifacts and tooling shipped in `build/` or anywhere else under the repo (e.g. an eventual `build/sprite-tools-v2.html` if such a thing is ever made).
 
+## Build assembly (bundle-inlining convention)
+
+Established 2026-05-13, validated via `build/poc-square-v2.html` against `build/poc-square.html`. Underlying decision in ADR-0016.
+
+The default approach for assembling a single-file HTML build:
+
+1. Inline `engine/engine.bundle.js` as a single block. This covers the ten engine source files (vendored `lib/riffwave.js` and `lib/sfxr.js`, plus `signal-bus.js`, `input.js`, `script.js`, `game-object.js`, `scene.js`, `audio.js`, `storage.js`, `game.js`) in their canonical concat order.
+2. Inline the game's scripts, in dependency order (scripts that other scripts reference via the `Engine` namespace or by class name must be defined first).
+3. Inline the game's scenes, after the scripts they reference.
+4. Inline the bootstrap snippet that retrieves the canvas, instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+
+This is equivalent in runtime behavior to the older individual-module concatenation. The bundle path is cleaner for builds assembled via tool calls (one block of engine source instead of ten) and is the default for new builds.
+
+The reference build for this pattern is `build/poc-square-v2.html`. Its header documents the inlined files and their blob SHAs at the time of assembly; use it as a template when writing a new build.
+
+When the bundle is regenerated (engine module changed), per CLAUDE.md §8 the bundle regeneration is committed in the same commit as the engine change. Existing game builds do not need to be regenerated; they continue to work with their inlined-at-build-time copy of the engine. Regeneration is only required when a build itself is intentionally being updated to pick up the latest engine.
+
+### When the individual-module path is still appropriate
+
+- Very small games that do not use audio or storage. The bundle adds ~37KB of jsfxr code plus a few KB of audio and storage modules even if unused. For minimal POCs where bundle inflation is undesirable (e.g., `build/poc-square.html`, the v1 build), inlining only the modules the game actually uses produces a smaller artifact.
+- Diagnostic builds where isolating an issue benefits from reading engine source inline rather than as a single bundle block.
+
+In both cases, the build's header documents which path was used and why.
+
 ## Code style
 
 - ES2020+ syntax. Target: modern Chromium, Firefox, and Safari.
