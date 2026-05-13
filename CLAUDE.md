@@ -131,6 +131,7 @@ Honor these immediately. Don't quietly partial-comply. If the user invokes a ski
 - **No silent network calls.** Tools that hit external services should make that visible to the user of the tool.
 - **Deterministic > generative when possible.** If a procedural approach can produce the asset, prefer it over an LLM call.
 - **Dead files are marked, not deleted, when tool gating prevents removal.** See `docs/DEAD_FILES.md` for the full convention and the active disposal queue. Files carrying a `DEAD-FILE` banner header are inert: do not modify them, do not include them in builds, do not surface them as backlog. A grep for `DEAD-FILE` across the repo enumerates every such file.
+- **Engine source fetch.** When a session needs the current engine source, fetch `engine/engine.bundle.js` as the canonical single-file representation. Do not reconstruct from individual modules and do not extract from old build files (game builds may inline an outdated engine version). Any commit that touches an engine module (`engine/*.js` or `engine/lib/*.js`) MUST regenerate the bundle in the same commit; the bundle's own header documents the regeneration recipe. See ADR-0016.
 
 ---
 

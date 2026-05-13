@@ -21,6 +21,8 @@ The runtime expects a single Game instance, a single SignalBus instance, a singl
 
 Vendored third-party code lives under `engine/lib/`. Currently this contains `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. See `engine/lib/README.md` for the source and update procedure.
 
+A single-file concatenation of all of the above lives at `engine/engine.bundle.js`. It is an auto-generated artifact (committed to the repo so that sessions can fetch it via MCP in one call) and exists per ADR-0016. The bundle is not part of the source; do not edit it directly. Per CLAUDE.md §8, any commit that touches an engine module must regenerate the bundle in the same commit.
+
 ## Class contracts
 
 ### Game
@@ -214,6 +216,7 @@ Note that collision response between a colliding pair is dispatched via direct m
 
 ```
 engine/
+├── engine.bundle.js  (auto-generated, see ADR-0016)
 ├── game.js
 ├── scene.js
 ├── game-object.js
@@ -246,6 +249,8 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 11. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, and `Engine.storage`.
 12. Scenes (after the scripts they reference).
 13. A small bootstrap snippet that gets the canvas element, instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+
+Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016) inlines steps 1 through 10 in the canonical order. A build that uses the bundle replaces steps 1 through 10 with a single inline of the bundle file followed by steps 11 through 13. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; per CLAUDE.md §8, any commit that changes an engine module must regenerate the bundle in the same commit.
 
 ## Open questions and future work
 
