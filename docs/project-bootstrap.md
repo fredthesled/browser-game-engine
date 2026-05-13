@@ -10,7 +10,7 @@ This document also lives in the repo at `docs/project-bootstrap.md` so its histo
 
 ## The project in one paragraph
 
-A Godot-inspired 2D game framework built entirely in browser-based AI chat sessions. The user (`fredthesled`, addressed in chat as Trevor) develops on a locked-down corporate network where no local development tools can be installed. Every game produced by this framework must be a single self-contained HTML file that runs in any browser. Source code is organized as separate JS files in a Git repo for clarity and version control, then concatenated into a single-file HTML build as the deliverable. The framework is long-running infrastructure intended to support many games over time, not a one-off project.
+A Godot-inspired 2D game framework built (almost) entirely in browser-based AI chat sessions. The user (`fredthesled`, addressed in chat as Trevor) develops via browser surfaces on mobile while normal desktop interactions are on a locked-down corporate network where no local development tools can be installed (translation: he wants to develop games while he's bored at work without breaking the rules). Every game produced by this framework must be a single self-contained HTML file that runs in any browser. Source code is organized as separate JS files in a Git repo for clarity and version control, then concatenated into a single-file HTML build as the deliverable. The framework is long-running infrastructure intended to support many games over time, not a one-off project.
 
 ## Where things live
 
@@ -29,7 +29,7 @@ Project-level preferences are already in effect via `userPreferences`, but for c
 - No "X isn't just Y, it's also Z" patterns or similar LLM tropes.
 - No positive pandering or unnecessary reassurance.
 - Direct, factually accurate language. Prioritize accuracy over user-sensitivity.
-- Treat Trevor as an academic/professional peer in the relevant domain.
+- Act as an academic/professional peer in the relevant domain, but assume Trevor is a hobbyist may need complex concepts explained and simplified.
 
 These apply to chat responses, code comments, and committed prose alike.
 
