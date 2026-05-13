@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Party House</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #0d0820; }
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: monospace; color: #c8b8e0; }
+    #game { display: block; background: #1a0d2e; image-rendering: pixelated; max-width: 100vw; max-height: 100vh; }
+  </style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<script>
+// ===========================================================================
+// AUTO-GENERATED BUILD. Do not edit directly -- regenerate from sources.
+//
+// Game:      Party House (study after UFO 50 #25 by Mossmouth)
+// Generated: 2026-05-13
+//
+// Concat order (per CONVENTIONS.md bundle-inlining path):
+//   1. engine/engine.bundle.js              (canonical engine artifact, ADR-0016)
+//   2. scripts/pause-overlay.js             (PauseOverlay utility)
+//   3. games/party-house/scenes/menu.js     (PHMenuScene)
+//   4. games/party-house/scenes/match.js    (PHMatchScene)
+//   5. bootstrap
+// ===========================================================================
+
+
+// ============================================================================
+// engine.bundle.js (inlined)
+// ============================================================================
+// Source SHAs at bundle generation time recorded in the bundle's own header,
+// preserved below.
+
+// ============================================================================
+// engine.bundle.js - Auto-generated engine bundle
+// ============================================================================
+
+// (Vendored library + engine modules. See engine/engine.bundle.js header for
+//  source SHAs and regeneration recipe.)
+
+var FastBase64 = {
+  chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+  encLookup: [],
+  Init: function() { for (var i=0; i<4096; i++) { this.encLookup[i] = this.chars[i >> 6] + this.chars[i & 0x3F]; } },
+  Encode: function(src) {
+    var len = src.length, dst = '', i = 0, n;
+    while (len > 2) { n = (src[i] << 16) | (src[i+1]<<8) | src[i+2]; dst+= this.encLookup[n >> 12] + this.encLookup[n & 0xFFF]; len-= 3; i+= 3; }
+    if (len > 0) {
+      var n1= (src[i] & 0xFC) >> 2; var n2= (src[i] & 0x03) << 4;
+      if (len > 1) n2 |= (src[++i] & 0xF0) >> 4;
+      dst+= this.chars[n1]; dst+= this.chars[n2];
+      if (len == 2) { var n3= (src[i++] & 0x0F) << 2; n3 |= (src[i] & 0xC0) >> 6; dst+= this.chars[n3]; }
+      if (len == 1) dst+= '='; dst+= '=';
+    }
+    return dst;
+  }
+};
+FastBase64.Init();
+
+var RIFFWAVE = function(data) {
+  this.data = []; this.wav = []; this.dataURI = '';
+  this.header = {
+    chunkId      : [0x52,0x49,0x46,0x46], chunkSize    : 0,
+    format       : [0x57,0x41,0x56,0x45], subChunk1Id  : [0x66,0x6d,0x74,0x20],
+    subChunk1Size: 16, audioFormat  : 1, numChannels  : 1,
+    sampleRate   : 8000, byteRate     : 0, blockAlign   : 0,
+    bitsPerSample: 8, subChunk2Id  : [0x64,0x61,0x74,0x61], subChunk2Size: 0
+  };
+  function u32ToArray(i) { return [i&0xFF, (i>>8)&0xFF, (i>>16)&0xFF, (i>>24)&0xFF]; }
+  function u16ToArray(i) { return [i&0xFF, (i>>8)&0xFF]; }
+  this.Make = function(data) {
+    if (data instanceof Array) this.data = data;
+    this.header.byteRate = (this.header.sampleRate * this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.blockAlign = (this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.subChunk2Size = this.data.length;
+    this.header.chunkSize = 36 + this.header.subChunk2Size;
+    this.wav = this.header.chunkId.concat(
+      u32ToArray(this.header.chunkSize), this.header.format, this.header.subChunk1Id,
+      u32ToArray(this.header.subChunk1Size), u16ToArray(this.header.audioFormat),
+      u16ToArray(this.header.numChannels), u32ToArray(this.header.sampleRate),
+      u32ToArray(this.header.byteRate), u16ToArray(this.header.blockAlign),
+      u16ToArray(this.header.bitsPerSample), this.header.subChunk2Id,
+      u32ToArray(this.header.subChunk2Size), this.data
+    );
+    this.dataURI = 'data:audio/wav;base64,'+FastBase64.Encode(this.wav);
+  };
+  if (data instanceof Array) this.Make(data);
+};
+if (typeof window !== 'undefined' && !window.RIFFWAVE) { window.RIFFWAVE = RIFFWAVE; }
+
+// jsfxr SFX synth (vendored, public domain)
+var SQUARE = 0, SAWTOOTH = 1, SINE = 2, NOISE = 3;
+var masterVolume = 1, OVERSAMPLING = 8;
+var sfxr;
+function Params() {
+  this.oldParams = true; this.wave_type = SQUARE;
+  this.p_env_attack = 0; this.p_env_sustain = 0.3; this.p_env_punch = 0; this.p_env_decay = 0.4;
+  this.p_base_freq = 0.3; this.p_freq_limit = 0; this.p_freq_ramp = 0; this.p_freq_dramp = 0;
+  this.p_vib_strength = 0; this.p_vib_speed = 0; this.p_arp_mod = 0; this.p_arp_speed = 0;
+  this.p_duty = 0; this.p_duty_ramp = 0; this.p_repeat_speed = 0;
+  this.p_pha_offset = 0; this.p_pha_ramp = 0;
+  this.p_lpf_freq = 1; this.p_lpf_ramp = 0; this.p_lpf_resonance = 0;
+  this.p_hpf_freq = 0; this.p_hpf_ramp = 0;
+  this.sound_vol = 0.5; this.sample_rate = 44100; this.sample_size = 8;
+}
+function sqr(x) { return x * x } function cube(x) { return x * x * x }
+function frnd(range) { return Math.random() * range; }
+function rndr(from, to) { return Math.random() * (to - from) + from; }
+function rnd(max) { return Math.floor(Math.random() * (max + 1)); }
+
+Params.prototype.fromJSON = function(struct) {
+  for (var p in struct) { if (struct.hasOwnProperty(p)) { this[p] = struct[p]; } }
+  return this;
+};
+Params.prototype.pickupCoin = function () {
+  this.wave_type = SAWTOOTH;
+  this.p_base_freq = 0.4 + frnd(0.5); this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.1); this.p_env_decay = 0.1 + frnd(0.4);
+  this.p_env_punch = 0.3 + frnd(0.3);
+  if (rnd(1)) { this.p_arp_speed = 0.5 + frnd(0.2); this.p_arp_mod = 0.2 + frnd(0.4); }
+  return this;
+};
+Params.prototype.laserShoot = function () {
+  this.wave_type = rnd(2);
+  if(this.wave_type === SINE && rnd(1)) this.wave_type = rnd(1);
+  if (rnd(2) === 0) {
+    this.p_base_freq = 0.3 + frnd(0.6); this.p_freq_limit = frnd(0.1);
+    this.p_freq_ramp = -0.35 - frnd(0.3);
+  } else {
+    this.p_base_freq = 0.5 + frnd(0.5);
+    this.p_freq_limit = this.p_base_freq - 0.2 - frnd(0.6);
+    if (this.p_freq_limit < 0.2) this.p_freq_limit = 0.2;
+    this.p_freq_ramp = -0.15 - frnd(0.2);
+  }
+  if (this.wave_type === SAWTOOTH) this.p_duty = 1;
+  if (rnd(1)) { this.p_duty = frnd(0.5); this.p_duty_ramp = frnd(0.2); }
+  else        { this.p_duty = 0.4 + frnd(0.5); this.p_duty_ramp = -frnd(0.7); }
+  this.p_env_attack = 0; this.p_env_sustain = 0.1 + frnd(0.2); this.p_env_decay = frnd(0.4);
+  if (rnd(1)) this.p_env_punch = frnd(0.3);
+  if (rnd(2) === 0) { this.p_pha_offset = frnd(0.2); this.p_pha_ramp = -frnd(0.2); }
+  this.p_hpf_freq = frnd(0.3);
+  return this;
+};
+Params.prototype.explosion = function () {
+  this.wave_type = NOISE;
+  if (rnd(1)) { this.p_base_freq = sqr(0.1 + frnd(0.4)); this.p_freq_ramp = -0.1 + frnd(0.4); }
+  else        { this.p_base_freq = sqr(0.2 + frnd(0.7)); this.p_freq_ramp = -0.2 - frnd(0.2); }
+  if (rnd(4) === 0) this.p_freq_ramp = 0;
+  if (rnd(2) === 0) this.p_repeat_speed = 0.3 + frnd(0.5);
+  this.p_env_attack = 0; this.p_env_sustain = 0.1 + frnd(0.3); this.p_env_decay = frnd(0.5);
+  if (rnd(1)) { this.p_pha_offset = -0.3 + frnd(0.9); this.p_pha_ramp = -frnd(0.3); }
+  this.p_env_punch = 0.2 + frnd(0.6);
+  if (rnd(1)) { this.p_vib_strength = frnd(0.7); this.p_vib_speed = frnd(0.6); }
+  if (rnd(2) === 0) { this.p_arp_speed = 0.6 + frnd(0.3); this.p_arp_mod = 0.8 - frnd(1.6); }
+  return this;
+};
+Params.prototype.powerUp = function () {
+  if (rnd(1)) { this.wave_type = SAWTOOTH; this.p_duty = 1; } else { this.p_duty = frnd(0.6); }
+  this.p_base_freq = 0.2 + frnd(0.3);
+  if (rnd(1)) { this.p_freq_ramp = 0.1 + frnd(0.4); this.p_repeat_speed = 0.4 + frnd(0.4); }
+  else        { this.p_freq_ramp = 0.05 + frnd(0.2);
+                if (rnd(1)) { this.p_vib_strength = frnd(0.7); this.p_vib_speed = frnd(0.6); } }
+  this.p_env_attack = 0; this.p_env_sustain = frnd(0.4); this.p_env_decay = 0.1 + frnd(0.4);
+  return this;
+};
+Params.prototype.hitHurt = function () {
+  this.wave_type = rnd(2);
+  if (this.wave_type === SINE)   this.wave_type = NOISE;
+  if (this.wave_type === SQUARE) this.p_duty = frnd(0.6);
+  if (this.wave_type === SAWTOOTH) this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.6); this.p_freq_ramp = -0.3 - frnd(0.4);
+  this.p_env_attack = 0; this.p_env_sustain = frnd(0.1); this.p_env_decay = 0.1 + frnd(0.2);
+  if (rnd(1)) this.p_hpf_freq = frnd(0.3);
+  return this;
+};
+Params.prototype.blipSelect = function () {
+  this.wave_type = rnd(1);
+  if (this.wave_type === SQUARE) this.p_duty = frnd(0.6); else this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.4);
+  this.p_env_attack = 0; this.p_env_sustain = 0.1 + frnd(0.1); this.p_env_decay = frnd(0.2);
+  this.p_hpf_freq = 0.1;
+  return this;
+};
+Params.prototype.click = function() {
+  const base = ["explosion", "hitHurt"][rnd(1)]; this[base]();
+  if (rnd(1)) this.p_freq_ramp = -0.5 + frnd(1.0);
+  if (rnd(1)) { this.p_env_sustain = (frnd(0.4) + 0.2) * this.p_env_sustain;
+                this.p_env_decay   = (frnd(0.4) + 0.2) * this.p_env_decay; }
+  if (rnd(3) == 0) this.p_env_attack = frnd(0.3);
+  this.p_base_freq = 1 - frnd(0.25); this.p_hpf_freq = 1 - frnd(0.1);
+  return this;
+};
+
+sfxr = {};
+sfxr.toBuffer = function(synthdef) { return (new SoundEffect(synthdef)).getRawBuffer()["buffer"]; };
+sfxr.toWave   = function(synthdef) { return (new SoundEffect(synthdef)).generate(); };
+sfxr.toAudio  = function(synthdef) { return sfxr.toWave(synthdef).getAudio(); };
+sfxr.play     = function(synthdef) { return sfxr.toAudio(synthdef).play(); };
+sfxr.generate = function(algorithm, options) {
+  const p = new Params(); const opts = options || {};
+  p.sound_vol    = opts["sound_vol"]    || 0.25;
+  p.sample_rate  = opts["sample_rate"]  || 44100;
+  p.sample_size  = opts["sample_size"]  || 8;
+  return p[algorithm]();
+};
+
+function SoundEffect(ps) {
+  if (typeof(ps) == "string") { var P = new Params(); ps = P.fromJSON(ps); }
+  this.init(ps);
+}
+SoundEffect.prototype.init = function (ps) {
+  this.parameters = ps; this.initForRepeat();
+  this.waveShape = parseInt(ps.wave_type);
+  this.fltw = Math.pow(ps.p_lpf_freq, 3) * 0.1;
+  this.enableLowPassFilter = (ps.p_lpf_freq != 1);
+  this.fltw_d = 1 + ps.p_lpf_ramp * 0.0001;
+  this.fltdmp = 5 / (1 + Math.pow(ps.p_lpf_resonance, 2) * 20) * (0.01 + this.fltw);
+  if (this.fltdmp > 0.8) this.fltdmp=0.8;
+  this.flthp = Math.pow(ps.p_hpf_freq, 2) * 0.1;
+  this.flthp_d = 1 + ps.p_hpf_ramp * 0.0003;
+  this.vibratoSpeed = Math.pow(ps.p_vib_speed, 2) * 0.01;
+  this.vibratoAmplitude = ps.p_vib_strength * 0.5;
+  this.envelopeLength = [
+    Math.floor(ps.p_env_attack  * ps.p_env_attack  * 100000),
+    Math.floor(ps.p_env_sustain * ps.p_env_sustain * 100000),
+    Math.floor(ps.p_env_decay   * ps.p_env_decay   * 100000)
+  ];
+  this.envelopePunch = ps.p_env_punch;
+  this.flangerOffset = Math.pow(ps.p_pha_offset, 2) * 1020;
+  if (ps.p_pha_offset < 0) this.flangerOffset = -this.flangerOffset;
+  this.flangerOffsetSlide = Math.pow(ps.p_pha_ramp, 2) * 1;
+  if (ps.p_pha_ramp < 0) this.flangerOffsetSlide = -this.flangerOffsetSlide;
+  this.repeatTime = Math.floor(Math.pow(1 - ps.p_repeat_speed, 2) * 20000 + 32);
+  if (ps.p_repeat_speed === 0) this.repeatTime = 0;
+  this.gain = Math.exp(ps.sound_vol) - 1;
+  this.sampleRate = ps.sample_rate; this.bitsPerChannel = ps.sample_size;
+};
+SoundEffect.prototype.initForRepeat = function() {
+  var ps = this.parameters; this.elapsedSinceRepeat = 0;
+  this.period = 100 / (ps.p_base_freq * ps.p_base_freq + 0.001);
+  this.periodMax = 100 / (ps.p_freq_limit * ps.p_freq_limit + 0.001);
+  this.enableFrequencyCutoff = (ps.p_freq_limit > 0);
+  this.periodMult = 1 - Math.pow(ps.p_freq_ramp, 3) * 0.01;
+  this.periodMultSlide = -Math.pow(ps.p_freq_dramp, 3) * 0.000001;
+  this.dutyCycle = 0.5 - ps.p_duty * 0.5;
+  this.dutyCycleSlide = -ps.p_duty_ramp * 0.00005;
+  if (ps.p_arp_mod >= 0) this.arpeggioMultiplier = 1 - Math.pow(ps.p_arp_mod, 2) * .9;
+  else                   this.arpeggioMultiplier = 1 + Math.pow(ps.p_arp_mod, 2) * 10;
+  this.arpeggioTime = Math.floor(Math.pow(1 - ps.p_arp_speed, 2) * 20000 + 32);
+  if (ps.p_arp_speed === 1) this.arpeggioTime = 0;
+};
+SoundEffect.prototype.getRawBuffer = function () {
+  var fltp = 0, fltdp = 0, fltphp = 0;
+  var noise_buffer = Array(32);
+  for (var i = 0; i < 32; ++i) noise_buffer[i] = Math.random() * 2 - 1;
+  var envelopeStage = 0, envelopeElapsed = 0, vibratoPhase = 0;
+  var phase = 0, ipp = 0;
+  var flanger_buffer = Array(1024);
+  for (var i = 0; i < 1024; ++i) flanger_buffer[i] = 0;
+  var num_clipped = 0, buffer = [], normalized = [];
+  var sample_sum = 0, num_summed = 0, summands = Math.floor(44100 / this.sampleRate);
+  for(var t = 0; ; ++t) {
+    if (this.repeatTime != 0 && ++this.elapsedSinceRepeat >= this.repeatTime) this.initForRepeat();
+    if(this.arpeggioTime != 0 && t >= this.arpeggioTime) { this.arpeggioTime = 0; this.period *= this.arpeggioMultiplier; }
+    this.periodMult += this.periodMultSlide; this.period *= this.periodMult;
+    if(this.period > this.periodMax) { this.period = this.periodMax; if (this.enableFrequencyCutoff) break; }
+    var rfperiod = this.period;
+    if (this.vibratoAmplitude > 0) { vibratoPhase += this.vibratoSpeed;
+      rfperiod = this.period * (1 + Math.sin(vibratoPhase) * this.vibratoAmplitude); }
+    var iperiod = Math.floor(rfperiod);
+    if (iperiod < OVERSAMPLING) iperiod = OVERSAMPLING;
+    this.dutyCycle += this.dutyCycleSlide;
+    if (this.dutyCycle < 0) this.dutyCycle = 0; if (this.dutyCycle > 0.5) this.dutyCycle = 0.5;
+    if (++envelopeElapsed > this.envelopeLength[envelopeStage]) {
+      envelopeElapsed = 0; if (++envelopeStage > 2) break;
+    }
+    var env_vol; var envf = envelopeElapsed / this.envelopeLength[envelopeStage];
+    if (envelopeStage === 0)      env_vol = envf;
+    else if (envelopeStage === 1) env_vol = 1 + (1 - envf) * 2 * this.envelopePunch;
+    else                          env_vol = 1 - envf;
+    this.flangerOffset += this.flangerOffsetSlide;
+    var iphase = Math.abs(Math.floor(this.flangerOffset));
+    if (iphase > 1023) iphase = 1023;
+    if (this.flthp_d != 0) {
+      this.flthp *= this.flthp_d;
+      if (this.flthp < 0.00001) this.flthp = 0.00001;
+      if (this.flthp > 0.1)     this.flthp = 0.1;
+    }
+    var sample = 0;
+    for (var si = 0; si < OVERSAMPLING; ++si) {
+      var sub_sample = 0; phase++;
+      if (phase >= iperiod) {
+        phase %= iperiod;
+        if (this.waveShape === NOISE) for(var i = 0; i < 32; ++i) noise_buffer[i] = Math.random() * 2 - 1;
+      }
+      var fp = phase / iperiod;
+      if (this.waveShape === SQUARE) { if (fp < this.dutyCycle) sub_sample=0.5; else sub_sample=-0.5; }
+      else if (this.waveShape === SAWTOOTH) {
+        if (fp < this.dutyCycle) sub_sample = -1 + 2 * fp/this.dutyCycle;
+        else sub_sample = 1 - 2 * (fp-this.dutyCycle)/(1-this.dutyCycle);
+      }
+      else if (this.waveShape === SINE)  sub_sample = Math.sin(fp * 2 * Math.PI);
+      else if (this.waveShape === NOISE) sub_sample = noise_buffer[Math.floor(phase * 32 / iperiod)];
+      var pp = fltp;
+      this.fltw *= this.fltw_d;
+      if (this.fltw < 0)   this.fltw = 0; if (this.fltw > 0.1) this.fltw = 0.1;
+      if (this.enableLowPassFilter) {
+        fltdp += (sub_sample - fltp) * this.fltw; fltdp -= fltdp * this.fltdmp;
+      } else { fltp = sub_sample; fltdp = 0; }
+      fltp += fltdp;
+      fltphp += fltp - pp; fltphp -= fltphp * this.flthp; sub_sample = fltphp;
+      flanger_buffer[ipp & 1023] = sub_sample;
+      sub_sample += flanger_buffer[(ipp - iphase + 1024) & 1023];
+      ipp = (ipp + 1) & 1023;
+      sample += sub_sample * env_vol;
+    }
+    sample_sum += sample;
+    if (++num_summed >= summands) { num_summed = 0; sample = sample_sum / summands; sample_sum = 0; }
+    else continue;
+    sample = sample / OVERSAMPLING * masterVolume; sample *= this.gain;
+    normalized.push(sample);
+    if (this.bitsPerChannel === 8) {
+      sample = Math.floor((sample + 1) * 128);
+      if (sample > 255) { sample = 255; ++num_clipped; }
+      else if (sample < 0) { sample = 0; ++num_clipped; }
+      buffer.push(sample);
+    } else {
+      sample = Math.floor(sample * (1<<15));
+      if (sample >= (1<<15))   { sample = (1 << 15)-1; ++num_clipped; }
+      else if (sample < -(1<<15)) { sample = -(1 << 15); ++num_clipped; }
+      buffer.push(sample & 0xFF); buffer.push((sample >> 8) & 0xFF);
+    }
+  }
+  return { "buffer": buffer, "normalized": normalized, "clipped": num_clipped };
+};
+SoundEffect.prototype.generate = function() {
+  var rendered = this.getRawBuffer(); var wave = new RIFFWAVE();
+  wave.header.sampleRate    = this.sampleRate;
+  wave.header.bitsPerSample = this.bitsPerChannel;
+  wave.Make(rendered.buffer);
+  wave.clipping = rendered.clipped; wave.buffer = rendered.normalized;
+  wave.getAudio = _sfxr_getAudioFn(wave);
+  return wave;
+};
+var _actx = null;
+var _sfxr_getAudioFn = function(wave) {
+  return function() {
+    var actx = null;
+    if (!_actx) {
+      if ('AudioContext' in window)             _actx = new AudioContext();
+      else if ('webkitAudioContext' in window)  _actx = new webkitAudioContext();
+    }
+    actx = _actx;
+    if (actx) {
+      var buff = actx.createBuffer(1, wave.buffer.length, wave.header.sampleRate);
+      var nowBuffering = buff.getChannelData(0);
+      for (var i = 0; i < wave.buffer.length; i++) nowBuffering[i] = wave.buffer[i];
+      var volume = 1.0;
+      var obj = {
+        "channels": [],
+        "setVolume": function(v) { volume = v; return obj; },
+        "play": function() {
+          var proc = actx.createBufferSource(); proc.buffer = buff;
+          var gainNode = actx.createGain(); gainNode.gain.value = volume;
+          gainNode.connect(actx.destination); proc.connect(gainNode);
+          if (proc["start"]) proc.start(); else if (proc["noteOn"]) proc.noteOn(0);
+          this.channels.push(proc); return proc;
+        }
+      };
+      return obj;
+    } else { var audio = new Audio(); audio.src = wave.dataURI; return audio; }
+  };
+};
+
+if (typeof window !== 'undefined') window.jsfxr = { "sfxr": sfxr, "Params": Params, "SoundEffect": SoundEffect };
+
+// engine/signal-bus.js
+var Engine = Engine || {};
+class SignalBus {
+  constructor() { this._listeners = new Map(); }
+  emit(name, payload) {
+    const handlers = this._listeners.get(name); if (!handlers) return;
+    for (const handler of [...handlers]) handler(payload);
+  }
+  on(name, handler) {
+    if (!this._listeners.has(name)) this._listeners.set(name, new Set());
+    this._listeners.get(name).add(handler);
+    return () => this.off(name, handler);
+  }
+  off(name, handler) {
+    const handlers = this._listeners.get(name); if (!handlers) return;
+    handlers.delete(handler);
+    if (handlers.size === 0) this._listeners.delete(name);
+  }
+}
+Engine.SignalBus = SignalBus;
+Engine.signals = new SignalBus();
+
+// engine/input.js
+class Input {
+  constructor(canvas = null) {
+    this._down = new Set();
+    this._justPressed = new Set(); this._justReleased = new Set();
+    this._pendingPressed = new Set(); this._pendingReleased = new Set();
+    this.mouse = { x: 0, y: 0, left: false, right: false };
+    this._canvas = canvas;
+    window.addEventListener('keydown', (e) => {
+      if (!this._down.has(e.key)) this._pendingPressed.add(e.key);
+      this._down.add(e.key);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (this._down.has(e.key)) this._pendingReleased.add(e.key);
+      this._down.delete(e.key);
+    });
+    const moveTarget = canvas || window;
+    moveTarget.addEventListener('mousemove', (e) => {
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        this.mouse.x = (e.clientX - rect.left) * scaleX;
+        this.mouse.y = (e.clientY - rect.top)  * scaleY;
+      } else { this.mouse.x = e.clientX; this.mouse.y = e.clientY; }
+    });
+    const downTarget = canvas || window;
+    downTarget.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.mouse.left = true;
+      if (e.button === 2) this.mouse.right = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouse.left = false;
+      if (e.button === 2) this.mouse.right = false;
+    });
+  }
+  isDown(key)           { return this._down.has(key); }
+  wasJustPressed(key)   { return this._justPressed.has(key); }
+  wasJustReleased(key)  { return this._justReleased.has(key); }
+  update() {
+    this._justPressed  = this._pendingPressed;
+    this._justReleased = this._pendingReleased;
+    this._pendingPressed  = new Set();
+    this._pendingReleased = new Set();
+  }
+}
+Engine.Input = Input;
+
+// engine/script.js
+class Script {
+  constructor(host) { this.host = host; }
+  on_enter() {} update(_dt) {} draw(_ctx) {} on_exit() {}
+}
+Engine.Script = Script;
+
+// engine/game-object.js
+class GameObject {
+  constructor(x = 0, y = 0) {
+    this.x = x; this.y = y; this.rotation = 0; this.scale = 1;
+    this.scripts = [];
+  }
+  attach(script) {
+    this.scripts.push(script);
+    if (typeof script.on_enter === 'function') script.on_enter();
+    return script;
+  }
+  detach(script) {
+    const i = this.scripts.indexOf(script); if (i === -1) return;
+    this.scripts.splice(i, 1);
+    if (typeof script.on_exit === 'function') script.on_exit();
+  }
+  update(dt) { for (const s of this.scripts) if (typeof s.update === 'function') s.update(dt); }
+  draw(ctx)  { for (const s of this.scripts) if (typeof s.draw   === 'function') s.draw(ctx); }
+}
+Engine.GameObject = GameObject;
+
+// engine/scene.js
+class Scene {
+  constructor() { this.objects = []; }
+  enter() {} exit() {}
+  add(obj)    { this.objects.push(obj); return obj; }
+  remove(obj) { const i = this.objects.indexOf(obj); if (i !== -1) this.objects.splice(i, 1); }
+  update(dt)  { for (const obj of [...this.objects]) obj.update(dt); this._collisionPass(); }
+  draw(ctx) {
+    for (const obj of this.objects) {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+      ctx.rotate(obj.rotation);
+      ctx.scale(obj.scale, obj.scale);
+      obj.draw(ctx);
+      ctx.restore();
+    }
+  }
+  _collisionPass() {
+    const colliders = [];
+    for (const obj of this.objects) {
+      for (const s of obj.scripts) if (s.isCollider) colliders.push(s);
+    }
+    for (let i = 0; i < colliders.length; i++) {
+      const a = colliders[i]; const aBox = a.getAabb();
+      for (let j = i + 1; j < colliders.length; j++) {
+        const b = colliders[j]; const bBox = b.getAabb();
+        if (aBox.x < bBox.x + bBox.w && aBox.x + aBox.w > bBox.x &&
+            aBox.y < bBox.y + bBox.h && aBox.y + aBox.h > bBox.y) {
+          a.onCollide(b); b.onCollide(a);
+        }
+      }
+    }
+  }
+}
+Engine.Scene = Scene;
+
+// engine/audio.js
+class EngineAudio {
+  constructor() { this._sounds=new Map(); this._cache=new Map(); this._volume=0.5; this._muted=false; }
+  register(name, paramsOrPreset) {
+    const params = typeof paramsOrPreset==='string' ? jsfxr.sfxr.generate(paramsOrPreset) : paramsOrPreset;
+    this._sounds.set(name, params); this._cache.delete(name);
+  }
+  play(name) {
+    if (this._muted) return;
+    const params = this._sounds.get(name);
+    if (!params) { console.warn(`Engine.audio: unknown sound '${name}'`); return; }
+    let audio = this._cache.get(name);
+    if (!audio) { audio = jsfxr.sfxr.toAudio(params); this._cache.set(name, audio); }
+    audio.setVolume(this._volume); audio.play();
+  }
+  setVolume(v) { this._volume = Math.max(0, Math.min(1, v)); }
+  getVolume()  { return this._volume; }
+  setMuted(b)  { this._muted = !!b; }
+  isMuted()    { return this._muted; }
+}
+Engine.Audio = EngineAudio;
+
+// engine/storage.js
+class EngineStorage {
+  constructor(namespace) {
+    this._namespace = namespace || '';
+    this._prefix = this._namespace ? this._namespace + ':' : '';
+    this._available = this._detectAvailable();
+    this._fallback = this._available ? null : new Map();
+  }
+  _detectAvailable() {
+    try {
+      const probe = '__engine_storage_probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return true;
+    } catch (e) { return false; }
+  }
+  isAvailable() { return this._available; }
+  getNamespace() { return this._namespace; }
+  _fullKey(key) { return this._prefix + key; }
+  save(key, value) {
+    if (value === undefined) {
+      console.warn(`Engine.storage.save: refusing to save undefined for key '${key}'.`); return false;
+    }
+    let serialized;
+    try { serialized = JSON.stringify(value); }
+    catch (e) { console.warn(`Engine.storage.save: cannot serialize value for key '${key}':`, e); return false; }
+    const fk = this._fullKey(key);
+    if (!this._available) { this._fallback.set(fk, serialized); return true; }
+    try { window.localStorage.setItem(fk, serialized); return true; }
+    catch (e) { console.warn(`Engine.storage.save: localStorage.setItem failed for key '${key}':`, e); return false; }
+  }
+  load(key, defaultValue = null) {
+    const fk = this._fullKey(key); let raw;
+    if (!this._available) raw = this._fallback.has(fk) ? this._fallback.get(fk) : null;
+    else                  raw = window.localStorage.getItem(fk);
+    if (raw === null) return defaultValue;
+    try { return JSON.parse(raw); }
+    catch (e) { console.warn(`Engine.storage.load: cannot parse stored value for key '${key}':`, e); return defaultValue; }
+  }
+  has(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) return this._fallback.has(fk);
+    return window.localStorage.getItem(fk) !== null;
+  }
+  clear(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) { this._fallback.delete(fk); return; }
+    window.localStorage.removeItem(fk);
+  }
+  clearAll() {
+    if (!this._available) {
+      if (!this._prefix) { this._fallback.clear(); return; }
+      for (const k of [...this._fallback.keys()]) if (k.startsWith(this._prefix)) this._fallback.delete(k);
+      return;
+    }
+    if (!this._prefix) { window.localStorage.clear(); return; }
+    const toRemove = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(this._prefix)) toRemove.push(k);
+    }
+    for (const k of toRemove) window.localStorage.removeItem(k);
+  }
+  keys() {
+    const out = [];
+    if (!this._available) {
+      for (const k of this._fallback.keys()) {
+        if (!this._prefix) { out.push(k); continue; }
+        if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+      }
+      return out;
+    }
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k === null) continue;
+      if (!this._prefix) { out.push(k); continue; }
+      if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+    }
+    return out;
+  }
+}
+Engine.Storage = EngineStorage;
+
+// engine/game.js
+class Game {
+  constructor(canvas, options = {}) {
+    if (!canvas || typeof canvas.getContext !== 'function') throw new Error('Game requires a canvas element.');
+    this.canvas = canvas; this.ctx = canvas.getContext('2d');
+    this.gameName = options.gameName || '';
+    this.currentScene = null; this._pendingScene = null;
+    this._lastFrameTime = 0; this._animationHandle = null; this._running = false;
+    Engine.input   = new Engine.Input(canvas);
+    Engine.audio   = new Engine.Audio();
+    Engine.storage = new Engine.Storage(this.gameName);
+  }
+  start() {
+    if (this._running) return;
+    this._running = true;
+    this._lastFrameTime = performance.now();
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+  stop() {
+    this._running = false;
+    if (this._animationHandle !== null) { cancelAnimationFrame(this._animationHandle); this._animationHandle = null; }
+  }
+  setScene(scene) { this._pendingScene = scene; }
+  _frame(now) {
+    if (!this._running) return;
+    let dt = (now - this._lastFrameTime) / 1000;
+    if (dt > 0.1) dt = 0.1;
+    this._lastFrameTime = now;
+    if (this._pendingScene) {
+      if (this.currentScene) this.currentScene.exit();
+      this.currentScene = this._pendingScene; this._pendingScene = null;
+      this.currentScene.enter();
+    }
+    Engine.input.update();
+    if (this.currentScene) {
+      this.currentScene.update(dt);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.currentScene.draw(this.ctx);
+    }
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+}
+Engine.Game = Game;
+
+
+// ============================================================================
+// scripts/pause-overlay.js
+// ============================================================================
+
+class PauseOverlay {
+  constructor(game, options = {}) {
+    this._game      = game;
+    this._paused    = false;
+    this._onRestart = options.onRestart ?? null;
+    this._onQuit    = options.onQuit    ?? null;
+    this._cursor    = 0;
+    this._rows      = this._buildRows();
+  }
+  _buildRows() {
+    const rows = [
+      { kind: 'resume', label: 'RESUME' },
+      { kind: 'volume', label: '' },
+    ];
+    if (this._onRestart) rows.push({ kind: 'restart', label: 'RESTART' });
+    if (this._onQuit)    rows.push({ kind: 'quit',    label: 'QUIT TO MENU' });
+    return rows;
+  }
+  toggle()  { this._paused = !this._paused; if (!this._paused) this._cursor = 0; }
+  isPaused() { return this._paused; }
+  update(dt) {
+    if (Engine.input.wasJustPressed('Escape')) { this.toggle(); return; }
+    if (!this._paused) return;
+    const n = this._rows.length;
+    if (Engine.input.wasJustPressed('ArrowUp'))   this._cursor = (this._cursor - 1 + n) % n;
+    if (Engine.input.wasJustPressed('ArrowDown')) this._cursor = (this._cursor + 1) % n;
+    const row = this._rows[this._cursor];
+    if (row.kind === 'volume') {
+      if (Engine.input.wasJustPressed('ArrowLeft'))
+        Engine.audio.setVolume(+(Math.max(0, Engine.audio.getVolume() - 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('ArrowRight'))
+        Engine.audio.setVolume(+(Math.min(1, Engine.audio.getVolume() + 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('m') || Engine.input.wasJustPressed('M'))
+        Engine.audio.setMuted(!Engine.audio.isMuted());
+    }
+    if (Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ')) {
+      if (row.kind === 'resume')  this.toggle();
+      else if (row.kind === 'restart' && this._onRestart) { this._paused = false; this._onRestart(); }
+      else if (row.kind === 'quit'    && this._onQuit)    { this._paused = false; this._onQuit();    }
+    }
+  }
+  draw(ctx) {
+    if (!this._paused) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, W, H);
+    const n = this._rows.length;
+    const pw = 420; const ph = 180 + n * 50;
+    const px = W / 2 - pw / 2, py = H / 2 - ph / 2 - 16;
+    ctx.fillStyle = '#111827'; ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px monospace';
+    ctx.fillText('PAUSED', W / 2, py + 44);
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px + 20, py + 72); ctx.lineTo(px + pw - 20, py + 72); ctx.stroke();
+    const muted = Engine.audio.isMuted();
+    const vol   = Math.round(Engine.audio.getVolume() * 10);
+    const volStr = muted ? 'AUDIO  [MUTED]' : 'AUDIO  [' + '|'.repeat(vol) + ' '.repeat(10 - vol) + '] ' + vol + '/10';
+    for (let i = 0; i < n; i++) {
+      const row = this._rows[i]; const ry = py + 106 + i * 50, sel = i === this._cursor;
+      if (sel) { ctx.fillStyle = 'rgba(241,196,15,0.10)'; ctx.fillRect(px + 12, ry - 20, pw - 24, 40); }
+      ctx.fillStyle = sel ? '#f1c40f' : '#9ca3af';
+      ctx.font      = sel ? 'bold 20px monospace' : '18px monospace';
+      const label = row.kind === 'volume' ? volStr : row.label;
+      ctx.fillText(label, W / 2, ry);
+    }
+    ctx.fillStyle = '#4b5563'; ctx.font = '11px monospace';
+    ctx.fillText('UP/DOWN navigate   LEFT/RIGHT volume   M mute   ESC resume', W / 2, py + ph - 16);
+    ctx.restore();
+  }
+}
+
+
+// ============================================================================
+// games/party-house/scenes/menu.js
+// ============================================================================
+
+class PHMenuScene extends Engine.Scene {
+  constructor(game) {
+    super();
+    this.game = game; this.t = 0;
+    this.best = Engine.storage.load('best', { fewestDays: null, totalWins: 0 });
+    this._prevMouseLeft = false;
+  }
+  enter() { Engine.audio.register('ph-start', 'blipSelect'); }
+  update(dt) {
+    super.update(dt); this.t += dt;
+    const mouseClick = !this._prevMouseLeft && Engine.input.mouse.left;
+    this._prevMouseLeft = Engine.input.mouse.left;
+    if (Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter') || mouseClick) {
+      Engine.audio.play('ph-start');
+      this.game.setScene(new PHMatchScene(this.game));
+    }
+  }
+  draw(ctx) {
+    super.draw(ctx);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#1a0d2e'); grad.addColorStop(1, '#2a1547');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    this._drawBackgroundGuests(ctx, W, H);
+    this._drawHouse(ctx, W / 2, H / 2 - 30);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 60px monospace';
+    ctx.fillText('PARTY HOUSE', W / 2, 90);
+    ctx.fillStyle = '#c8b8e0'; ctx.font = '16px monospace';
+    ctx.fillText('throw the ultimate party within 25 days', W / 2, 130);
+    ctx.fillText('four stars at one party wins the night', W / 2, 152);
+    const panelY = H / 2 + 110;
+    if (this.best.fewestDays !== null || this.best.totalWins > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(W / 2 - 180, panelY - 28, 360, 70);
+      ctx.strokeStyle = '#5a4880'; ctx.lineWidth = 1;
+      ctx.strokeRect(W / 2 - 180, panelY - 28, 360, 70);
+      ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 14px monospace';
+      ctx.fillText('BEST RECORD', W / 2, panelY - 12);
+      ctx.fillStyle = '#fff'; ctx.font = '15px monospace';
+      const daysTxt = this.best.fewestDays !== null
+        ? `fewest days to win: ${this.best.fewestDays}`
+        : 'fewest days to win: --';
+      ctx.fillText(daysTxt, W / 2, panelY + 10);
+      ctx.fillText(`total wins: ${this.best.totalWins || 0}`, W / 2, panelY + 30);
+    }
+    if (Math.sin(this.t * 4) > 0) {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 18px monospace';
+      ctx.fillText('press SPACE to start the night', W / 2, H - 50);
+    }
+    ctx.fillStyle = '#6a5a8a'; ctx.font = '10px monospace';
+    ctx.fillText('a study after UFO 50 #25 - PARTY HOUSE by mossmouth', W / 2, H - 18);
+  }
+  _drawHouse(ctx, cx, cy) {
+    ctx.save();
+    ctx.fillStyle = '#3d2a5c'; ctx.fillRect(cx - 70, cy - 30, 140, 90);
+    ctx.fillStyle = '#5a3a8a';
+    ctx.beginPath();
+    ctx.moveTo(cx - 85, cy - 30); ctx.lineTo(cx, cy - 75); ctx.lineTo(cx + 85, cy - 30);
+    ctx.closePath(); ctx.fill();
+    const doorGlow = 0.6 + 0.3 * Math.sin(this.t * 2);
+    ctx.fillStyle = `rgba(245, 215, 110, ${doorGlow})`;
+    ctx.fillRect(cx - 14, cy + 10, 28, 50);
+    ctx.fillStyle = '#3d2a5c'; ctx.fillRect(cx + 8, cy + 34, 3, 3);
+    const winGlow = 0.4 + 0.4 * Math.sin(this.t * 5 + 1);
+    ctx.fillStyle = `rgba(180, 120, 220, ${winGlow})`;
+    ctx.fillRect(cx - 50, cy - 10, 22, 22);
+    ctx.fillRect(cx + 28, cy - 10, 22, 22);
+    ctx.fillStyle = '#f5d76e'; ctx.font = '16px monospace';
+    for (let i = 0; i < 3; i++) {
+      const phase = (this.t * 0.6 + i * 0.5) % 2;
+      const ny = cy - 80 - phase * 50;
+      const nx = cx - 40 + i * 40 + Math.sin(phase * 4) * 8;
+      const alpha = 1 - phase / 2;
+      ctx.globalAlpha = alpha;
+      ctx.fillText(['\u266a', '\u266b', '\u266a'][i], nx, ny);
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+  }
+  _drawBackgroundGuests(ctx, W, H) {
+    ctx.save();
+    const colors = ['#8896a3', '#c46a6a', '#c9a14a', '#6fa86b', '#9c64a4'];
+    for (let i = 0; i < 5; i++) {
+      const phase = (this.t * 0.15 + i * 0.2) % 1;
+      const gx = phase * W;
+      const gy = H - 60 + Math.sin(phase * 8 + i) * 4;
+      ctx.fillStyle = colors[i]; ctx.globalAlpha = 0.3;
+      ctx.beginPath(); ctx.arc(gx, gy - 12, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(gx - 6, gy - 6, 12, 16);
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+  }
+}
+
+
+// ============================================================================
+// games/party-house/scenes/match.js
+// ============================================================================
+
+const PH_GUESTS = {
+  OF: { key:'OF', name:'Old Friend',  pop:1,  cash: 0, trouble:0, max:4, cost:0,  star:false, color:'#8896a3', text:'#1a1530' },
+  WB: { key:'WB', name:'Wild Buddy',  pop:2,  cash: 0, trouble:1, max:4, cost:0,  star:false, color:'#c46a6a', text:'#1a1530' },
+  RP: { key:'RP', name:'Rich Pal',    pop:0,  cash: 1, trouble:0, max:4, cost:0,  star:false, color:'#c9a14a', text:'#1a1530' },
+  CD: { key:'CD', name:'Cute Dog',    pop:1,  cash: 0, trouble:0, max:4, cost:5,  star:false, color:'#a8784a', text:'#fff5e0', ability:'removeTrouble' },
+  HP: { key:'HP', name:'Hippie',      pop:2,  cash: 0, trouble:0, max:4, cost:6,  star:false, color:'#6fa86b', text:'#1a1530', ability:'removeTrouble' },
+  AU: { key:'AU', name:'Auctioneer',  pop:0,  cash: 1, trouble:0, max:4, cost:4,  star:false, color:'#9c64a4', text:'#fff5e0', ability:'cashPerOldFriend' },
+  RS: { key:'RS', name:'Rock Star',   pop:3,  cash: 0, trouble:1, max:4, cost:12, star:false, color:'#7e5fb8', text:'#fff5e0' },
+  CE: { key:'CE', name:'Celebrity',   pop:1,  cash: 0, trouble:0, max:4, cost:20, star:true,  color:'#e8c248', text:'#1a1530' },
+  DR: { key:'DR', name:'Dragon',      pop:2,  cash:-3, trouble:0, max:4, cost:22, star:true,  color:'#b34747', text:'#fff5e0' }
+};
+const PH_SHOP_ORDER = ['CD','HP','AU','RS','CE','DR'];
+const PH_ABILITY_LABEL = {
+  removeTrouble:    'on enter: -1 trouble',
+  cashPerOldFriend: 'on enter: +1 cash per Old Friend already inside'
+};
+
+class PHMatchScene extends Engine.Scene {
+  constructor(game) {
+    super();
+    this.game = game;
+    this._pause = new PauseOverlay(game, {
+      onRestart: () => game.setScene(new PHMatchScene(game)),
+      onQuit:    () => game.setScene(new PHMenuScene(game))
+    });
+    this._initGameState();
+  }
+  _initGameState() {
+    this.day = 1; this.maxDays = 25;
+    this.popularity = 0; this.cash = 0;
+    this.rolodex = ['OF','OF','OF','OF','WB','WB','WB','WB','RP','RP'];
+    this.bought = { CD:0, HP:0, AU:0, RS:0, CE:0, DR:0 };
+    this.houseCapacity = 5; this.expandCost = 2;
+    this.bannedType = null;
+    this.phase = 'day-start'; this.phaseTimer = 0;
+    this.inParty = []; this.partyLog = []; this.partyDeck = [];
+    this.partyPop = 0; this.partyCash = 0; this.partyTrouble = 0;
+    this.shutdownReason = '';
+    this._prevMouseLeft = false; this._mouseClicked = false;
+    this.message = ''; this.messageTimer = 0;
+  }
+  enter() {
+    Engine.audio.register('ph-invite',   'click');
+    Engine.audio.register('ph-pop',      'pickupCoin');
+    Engine.audio.register('ph-cash',     'powerUp');
+    Engine.audio.register('ph-trouble',  'hitHurt');
+    Engine.audio.register('ph-shutdown', 'explosion');
+    Engine.audio.register('ph-buy',      'blipSelect');
+    Engine.audio.register('ph-expand',   'powerUp');
+    Engine.audio.register('ph-win',      'pickupCoin');
+    Engine.audio.register('ph-lose',     'explosion');
+    Engine.audio.register('ph-star',     'pickupCoin');
+    this._startDay();
+  }
+  _startDay() {
+    this.phase = 'day-start'; this.phaseTimer = 0;
+    this.inParty = []; this.partyLog = [];
+    this.partyPop = 0; this.partyCash = 0; this.partyTrouble = 0;
+    this.shutdownReason = '';
+    this.partyDeck = [...this.rolodex];
+    if (this.bannedType) {
+      const i = this.partyDeck.indexOf(this.bannedType);
+      if (i !== -1) this.partyDeck.splice(i, 1);
+      this.bannedType = null;
+    }
+    this._shuffle(this.partyDeck);
+  }
+  _shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+  }
+  update(dt) {
+    super.update(dt);
+    this._pause.update(dt);
+    this._mouseClicked = !this._prevMouseLeft && Engine.input.mouse.left;
+    this._prevMouseLeft = Engine.input.mouse.left;
+    if (this._pause.isPaused()) return;
+    if (this.messageTimer > 0) { this.messageTimer -= dt; if (this.messageTimer <= 0) this.message = ''; }
+    this.phaseTimer += dt;
+    switch (this.phase) {
+      case 'day-start':  this._updateDayStart(dt);   break;
+      case 'party':      this._updateParty(dt);      break;
+      case 'party-end':  this._updateContinue();     break;
+      case 'shutdown':   this._updateContinue('ban'); break;
+      case 'ban':        this._updateBan();          break;
+      case 'shop':       this._updateShop();         break;
+      case 'win':        this._updateEnd();          break;
+      case 'lose':       this._updateEnd();          break;
+    }
+  }
+  _updateDayStart(dt) { if (this.phaseTimer > 0.9) { this.phase = 'party'; this.phaseTimer = 0; } }
+  _updateParty(dt) {
+    if (Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter') ||
+        this._clickedRect(this._inviteBtnRect())) this._inviteNextGuest();
+    if (Engine.input.wasJustPressed('e') || Engine.input.wasJustPressed('E') ||
+        this._clickedRect(this._endPartyBtnRect())) this._endPartySuccessfully();
+  }
+  _inviteNextGuest() {
+    if (this.partyDeck.length === 0) { this._flash('Rolodex exhausted'); this._endPartySuccessfully(); return; }
+    if (this.inParty.length >= this.houseCapacity) { this._flash('House is full'); this._endPartySuccessfully(); return; }
+    const key = this.partyDeck.pop();
+    this.inParty.push(key);
+    const g = PH_GUESTS[key];
+    this.partyPop += g.pop; this.partyCash += g.cash; this.partyTrouble += g.trouble;
+    this._log(`${g.name} arrives`);
+    if (g.ability === 'removeTrouble' && this.partyTrouble > 0) {
+      this.partyTrouble -= 1; this._log(`  ${g.name}: -1 trouble`);
+    } else if (g.ability === 'cashPerOldFriend') {
+      const count = this.inParty.filter((k, idx) => k === 'OF' && idx !== this.inParty.length - 1).length;
+      if (count > 0) { this.partyCash += count; this._log(`  ${g.name}: +${count} cash`); }
+    }
+    if (g.star) Engine.audio.play('ph-star');
+    else if (g.trouble > 0) Engine.audio.play('ph-trouble');
+    else if (g.cash > 0 && g.pop === 0) Engine.audio.play('ph-cash');
+    else if (g.pop > 0) Engine.audio.play('ph-pop');
+    else Engine.audio.play('ph-invite');
+    if (this.partyTrouble >= 3) { this._shutdown('Too much trouble. The cops shut it down.'); return; }
+    if (this.inParty.length >= this.houseCapacity) this._endPartySuccessfully();
+  }
+  _endPartySuccessfully() {
+    this.popularity = Math.max(0, this.popularity + this.partyPop);
+    this.cash       = Math.max(0, this.cash       + this.partyCash);
+    const stars = this.inParty.filter(k => PH_GUESTS[k].star).length;
+    if (stars >= 4) { this._win(); return; }
+    this.phase = 'party-end'; this.phaseTimer = 0;
+  }
+  _shutdown(reason) {
+    this.shutdownReason = reason; this.phase = 'shutdown'; this.phaseTimer = 0;
+    Engine.audio.play('ph-shutdown');
+  }
+  _updateContinue(nextPhase) {
+    if (this._mouseClicked || Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter')) {
+      if (nextPhase === 'ban') {
+        const unique = [...new Set(this.inParty)];
+        if (unique.length === 0) this._advanceToShop();
+        else { this.phase = 'ban'; this.phaseTimer = 0; }
+      } else this._advanceToShop();
+    }
+  }
+  _updateBan() {
+    const unique = [...new Set(this.inParty)];
+    for (let i = 0; i < unique.length; i++) {
+      if (this._clickedRect(this._banGuestRect(i, unique.length))) {
+        this.bannedType = unique[i];
+        this._flash(`Banned ${PH_GUESTS[unique[i]].name} from next party`);
+        this._advanceToShop(); return;
+      }
+    }
+    if (Engine.input.wasJustPressed('s') || Engine.input.wasJustPressed('S') ||
+        this._clickedRect(this._banSkipRect())) this._advanceToShop();
+  }
+  _advanceToShop() { this.phase = 'shop'; this.phaseTimer = 0; }
+  _updateShop() {
+    for (let i = 0; i < PH_SHOP_ORDER.length; i++) {
+      if (this._clickedRect(this._shopGuestRect(i))) this._tryBuyGuest(PH_SHOP_ORDER[i]);
+    }
+    if (this._clickedRect(this._expandBtnRect()) || Engine.input.wasJustPressed('x') || Engine.input.wasJustPressed('X'))
+      this._tryExpandHouse();
+    if (this._clickedRect(this._continueBtnRect()) || Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter'))
+      this._nextDay();
+  }
+  _tryBuyGuest(key) {
+    const g = PH_GUESTS[key];
+    if (this.bought[key] >= g.max) { this._flash(`Maxed out on ${g.name}`); return; }
+    if (this.popularity < g.cost)  { this._flash(`Need ${g.cost} pop`); return; }
+    this.popularity -= g.cost; this.bought[key] += 1; this.rolodex.push(key);
+    Engine.audio.play('ph-buy'); this._flash(`Added ${g.name} to rolodex`);
+  }
+  _tryExpandHouse() {
+    if (this.cash < this.expandCost) { this._flash(`Need $${this.expandCost}`); return; }
+    this.cash -= this.expandCost; this.houseCapacity += 1;
+    this.expandCost = Math.min(12, this.expandCost + 1);
+    Engine.audio.play('ph-expand'); this._flash(`House expanded to ${this.houseCapacity}`);
+  }
+  _nextDay() {
+    this.day += 1;
+    if (this.day > this.maxDays) { this._lose(); return; }
+    this._startDay();
+  }
+  _win() {
+    this.phase = 'win'; this.phaseTimer = 0;
+    Engine.audio.play('ph-win');
+    const best = Engine.storage.load('best', { fewestDays: null, totalWins: 0 });
+    if (best.fewestDays === null || this.day < best.fewestDays) { best.fewestDays = this.day; this._newRecord = true; }
+    else this._newRecord = false;
+    best.totalWins = (best.totalWins || 0) + 1;
+    Engine.storage.save('best', best);
+    this._savedBest = best;
+  }
+  _lose() { this.phase = 'lose'; this.phaseTimer = 0; Engine.audio.play('ph-lose'); }
+  _updateEnd() {
+    if (this.phaseTimer > 0.5 &&
+        (this._mouseClicked || Engine.input.wasJustPressed(' ') || Engine.input.wasJustPressed('Enter')))
+      this.game.setScene(new PHMenuScene(this.game));
+  }
+  _clickedRect(r) {
+    if (!r || !this._mouseClicked) return false;
+    const m = Engine.input.mouse;
+    return m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h;
+  }
+  _flash(msg) { this.message = msg; this.messageTimer = 1.5; }
+  _log(msg)   { this.partyLog.push(msg); if (this.partyLog.length > 8) this.partyLog.shift(); }
+  _inviteBtnRect()   { return { x: 540, y: 470, w: 180, h: 50 }; }
+  _endPartyBtnRect() { return { x: 740, y: 470, w: 180, h: 50 }; }
+  _continueBtnRect() { return { x: 740, y: 470, w: 180, h: 50 }; }
+  _expandBtnRect()   { return { x: 540, y: 470, w: 180, h: 50 }; }
+  _shopGuestRect(i) {
+    const col = i % 3, row = Math.floor(i / 3);
+    return { x: 40 + col * 160, y: 270 + row * 100, w: 140, h: 80 };
+  }
+  _banGuestRect(i, n) {
+    const slotW = 120, gap = 12;
+    const totalW = n * slotW + (n - 1) * gap;
+    const startX = (960 - totalW) / 2;
+    return { x: startX + i * (slotW + gap), y: 380, w: slotW, h: 80 };
+  }
+  _banSkipRect() { return { x: 960 / 2 - 80, y: 480, w: 160, h: 36 }; }
+  draw(ctx) {
+    super.draw(ctx);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#1a0d2e'); grad.addColorStop(1, '#2a1547');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    this._drawHeader(ctx, W, H);
+    switch (this.phase) {
+      case 'day-start': this._drawHouseSlots(ctx, W, H); this._drawDayStart(ctx, W, H); break;
+      case 'party':     this._drawHouseSlots(ctx, W, H); this._drawPartyControls(ctx, W, H); break;
+      case 'party-end': this._drawHouseSlots(ctx, W, H); this._drawPartyEndOverlay(ctx, W, H); break;
+      case 'shutdown':  this._drawHouseSlots(ctx, W, H); this._drawShutdownOverlay(ctx, W, H); break;
+      case 'ban':       this._drawBanScreen(ctx, W, H); break;
+      case 'shop':      this._drawShop(ctx, W, H); break;
+      case 'win':       this._drawHouseSlots(ctx, W, H); this._drawEndOverlay(ctx, W, H, true);  break;
+      case 'lose':      this._drawHouseSlots(ctx, W, H); this._drawEndOverlay(ctx, W, H, false); break;
+    }
+    if (this.message && this.messageTimer > 0) this._drawMessage(ctx, W, H);
+    this._pause.draw(ctx);
+  }
+  _drawHeader(ctx, W, H) {
+    ctx.fillStyle = '#0d0820'; ctx.fillRect(0, 0, W, 56);
+    ctx.strokeStyle = '#3d2a5c'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(W, 56); ctx.stroke();
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'left'; ctx.fillText(`DAY ${this.day} / ${this.maxDays}`, 20, 28);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace';
+    ctx.fillText(`POP ${this.popularity}    CASH $${this.cash}`, W / 2, 28);
+    const stars = this.inParty.filter(k => PH_GUESTS[k].star).length;
+    ctx.textAlign = 'right'; ctx.fillStyle = stars >= 4 ? '#f5d76e' : '#c8b8e0';
+    ctx.fillText(`STARS ${stars} / 4`, W - 20, 28);
+    const tx = W - 320, ty = 14;
+    ctx.textAlign = 'left'; ctx.fillStyle = '#c8b8e0'; ctx.font = '13px monospace';
+    ctx.fillText('TROUBLE', tx, 28);
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < this.partyTrouble ? '#c46a6a' : '#3d2a5c';
+      ctx.fillRect(tx + 78 + i * 20, ty + 4, 16, 18);
+      ctx.strokeStyle = '#1a0d2e'; ctx.strokeRect(tx + 78 + i * 20, ty + 4, 16, 18);
+    }
+  }
+  _drawHouseSlots(ctx, W, H) {
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c8b8e0'; ctx.font = 'bold 14px monospace';
+    ctx.fillText(`HOUSE -- capacity ${this.houseCapacity}`, 30, 84);
+    ctx.fillStyle = '#9a8cbe'; ctx.font = '12px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(`deck: ${this.partyDeck.length}   rolodex: ${this.rolodex.length}`, W - 30, 84);
+    const slotW = 80, slotH = 110, gap = 14;
+    const totalW = this.houseCapacity * slotW + (this.houseCapacity - 1) * gap;
+    const startX = (W - totalW) / 2; const startY = 110;
+    for (let i = 0; i < this.houseCapacity; i++) {
+      const sx = startX + i * (slotW + gap); const sy = startY;
+      const filled = i < this.inParty.length;
+      if (filled) { this._drawGuestCard(ctx, sx, sy, slotW, slotH, PH_GUESTS[this.inParty[i]], false); }
+      else {
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(sx, sy, slotW, slotH);
+        ctx.strokeStyle = '#3d2a5c'; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]); ctx.strokeRect(sx, sy, slotW, slotH); ctx.setLineDash([]);
+      }
+    }
+    const py = startY + slotH + 18;
+    ctx.fillStyle = '#0d0820'; ctx.fillRect(30, py, W - 60, 44);
+    ctx.strokeStyle = '#3d2a5c'; ctx.strokeRect(30, py, W - 60, 44);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#c8b8e0'; ctx.font = 'bold 13px monospace';
+    ctx.fillText('THIS PARTY', 50, py + 22);
+    ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
+    ctx.fillText(`pop +${this.partyPop}   cash ${this.partyCash >= 0 ? '+' : ''}${this.partyCash}   trouble ${this.partyTrouble}`, 170, py + 22);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#9a8cbe'; ctx.font = '11px monospace';
+    for (let i = 0; i < this.partyLog.length; i++) {
+      const m = this.partyLog[this.partyLog.length - 1 - i];
+      ctx.globalAlpha = Math.max(0.25, 1 - i * 0.18);
+      ctx.fillText(m, W - 50, py + 22 - i * 14);
+    }
+    ctx.globalAlpha = 1;
+  }
+  _drawGuestCard(ctx, x, y, w, h, g, showCost) {
+    ctx.fillStyle = g.color; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#1a0d2e'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    if (g.star) { ctx.fillStyle = '#f5d76e'; this._drawStar(ctx, x + w - 14, y + 14, 8); }
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 6, y + 6, 24, 20);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(g.key, x + 10, y + 17);
+    ctx.fillStyle = g.text; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(g.name, x + w / 2, y + 38);
+    ctx.font = '11px monospace'; ctx.fillStyle = g.text;
+    let line = y + 56;
+    const stats = [];
+    if (g.pop !== 0)     stats.push(`${g.pop > 0 ? '+' : ''}${g.pop} pop`);
+    if (g.cash !== 0)    stats.push(`${g.cash > 0 ? '+' : ''}${g.cash} cash`);
+    if (g.trouble !== 0) stats.push(`+${g.trouble} trouble`);
+    for (const s of stats) { ctx.fillText(s, x + w / 2, line); line += 14; }
+    if (g.ability) { ctx.font = 'italic 9px monospace'; ctx.fillText('ability!', x + w / 2, line); }
+    if (showCost) {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, y + h - 18, w, 18);
+      ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(`${g.cost} pop`, x + w / 2, y + h - 9);
+    }
+  }
+  _drawStar(ctx, cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a  = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const rr = i % 2 === 0 ? r : r * 0.45;
+      const px = cx + Math.cos(a) * rr; const py = cy + Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  _drawDayStart(ctx, W, H) {
+    const alpha = Math.min(1, this.phaseTimer * 3);
+    ctx.fillStyle = `rgba(13,8,32,${alpha * 0.6})`; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(245,215,110,${alpha})`; ctx.font = 'bold 64px monospace';
+    ctx.fillText(`DAY ${this.day}`, W / 2, H / 2);
+    if (this.bannedType) {
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`; ctx.font = '16px monospace';
+      ctx.fillText(`${PH_GUESTS[this.bannedType].name} skips tonight`, W / 2, H / 2 + 60);
+    }
+  }
+  _drawPartyControls(ctx, W, H) {
+    this._drawButton(ctx, this._inviteBtnRect(),  '[SPACE] INVITE NEXT', '#3a7a4a', this.partyDeck.length > 0);
+    this._drawButton(ctx, this._endPartyBtnRect(), '[E] END PARTY',       '#7a3a4a', true);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9a8cbe'; ctx.font = '11px monospace';
+    ctx.fillText('ESC: pause / audio settings / restart / quit', W / 2, H - 12);
+  }
+  _drawButton(ctx, r, label, color, enabled) {
+    ctx.fillStyle = enabled ? color : '#2a2440'; ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = enabled ? '#fff' : '#5a4880'; ctx.lineWidth = 2;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = enabled ? '#fff' : '#7a6aa0'; ctx.font = 'bold 14px monospace';
+    ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
+  }
+  _drawPartyEndOverlay(ctx, W, H) {
+    ctx.fillStyle = 'rgba(13,8,32,0.85)'; ctx.fillRect(80, 350, W - 160, 160);
+    ctx.strokeStyle = '#5a4880'; ctx.strokeRect(80, 350, W - 160, 160);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 22px monospace';
+    ctx.fillText('PARTY ENDED', W / 2, 380);
+    ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
+    ctx.fillText(`+ ${this.partyPop} pop    + ${this.partyCash} cash`, W / 2, 420);
+    const stars = this.inParty.filter(k => PH_GUESTS[k].star).length;
+    ctx.fillStyle = '#c8b8e0';
+    ctx.fillText(`${stars} star${stars === 1 ? '' : 's'} at the party`, W / 2, 442);
+    ctx.fillStyle = '#9a8cbe'; ctx.font = '12px monospace';
+    ctx.fillText('click or press SPACE to continue', W / 2, 480);
+  }
+  _drawShutdownOverlay(ctx, W, H) {
+    ctx.fillStyle = 'rgba(40,10,10,0.88)'; ctx.fillRect(80, 350, W - 160, 160);
+    ctx.strokeStyle = '#c46a6a'; ctx.lineWidth = 2; ctx.strokeRect(80, 350, W - 160, 160);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c46a6a'; ctx.font = 'bold 22px monospace';
+    ctx.fillText('SHUT DOWN', W / 2, 380);
+    ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
+    ctx.fillText(this.shutdownReason, W / 2, 410);
+    ctx.fillStyle = '#c8b8e0';
+    ctx.fillText('no popularity or cash earned this party', W / 2, 432);
+    ctx.fillStyle = '#9a8cbe'; ctx.font = '12px monospace';
+    ctx.fillText('click or press SPACE to ban a guest', W / 2, 480);
+  }
+  _drawBanScreen(ctx, W, H) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#c46a6a'; ctx.font = 'bold 26px monospace';
+    ctx.fillText('PICK A GUEST TO BAN FROM THE NEXT PARTY', W / 2, 110);
+    ctx.fillStyle = '#c8b8e0'; ctx.font = '14px monospace';
+    ctx.fillText('they keep their rolodex slot, but skip the next night', W / 2, 140);
+    const unique = [...new Set(this.inParty)];
+    for (let i = 0; i < unique.length; i++) {
+      const r = this._banGuestRect(i, unique.length);
+      const g = PH_GUESTS[unique[i]];
+      const m = Engine.input.mouse;
+      const hover = m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h;
+      if (hover) { ctx.fillStyle = 'rgba(245,215,110,0.15)'; ctx.fillRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8); }
+      this._drawGuestCard(ctx, r.x, r.y, r.w, r.h, g, false);
+      const count = this.inParty.filter(k => k === unique[i]).length;
+      if (count > 1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(r.x + r.w - 26, r.y + r.h - 22, 22, 18);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(`x${count}`, r.x + r.w - 15, r.y + r.h - 13);
+      }
+    }
+    this._drawButton(ctx, this._banSkipRect(), '[S] skip ban', '#3d2a5c', true);
+    ctx.fillStyle = '#9a8cbe'; ctx.font = '11px monospace';
+    ctx.fillText('click a guest to ban one rolodex copy for one party', W / 2, H - 12);
+  }
+  _drawShop(ctx, W, H) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 28px monospace';
+    ctx.fillText('SHOP', W / 2, 92);
+    ctx.fillStyle = '#c8b8e0'; ctx.font = '13px monospace';
+    ctx.fillText('add guests to your rolodex   |   expand your house', W / 2, 116);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#c8b8e0'; ctx.font = 'bold 13px monospace';
+    ctx.fillText('AVAILABLE GUESTS', 40, 142);
+    for (let i = 0; i < PH_SHOP_ORDER.length; i++) {
+      const key = PH_SHOP_ORDER[i]; const g = PH_GUESTS[key];
+      const r = this._shopGuestRect(i);
+      const owned = this.bought[key]; const maxed = owned >= g.max;
+      const afford = this.popularity >= g.cost;
+      if (maxed || !afford) ctx.globalAlpha = 0.45;
+      const m = Engine.input.mouse;
+      const hover = !maxed && afford && m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h;
+      if (hover) { ctx.fillStyle = 'rgba(245,215,110,0.15)'; ctx.fillRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8); }
+      ctx.fillStyle = g.color; ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.strokeStyle = '#1a0d2e'; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+      if (g.star) { ctx.fillStyle = '#f5d76e'; this._drawStar(ctx, r.x + r.w - 12, r.y + 12, 7); }
+      ctx.fillStyle = g.text; ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace';
+      ctx.fillText(g.name, r.x + 8, r.y + 16);
+      ctx.font = '10px monospace';
+      const stats = [];
+      if (g.pop !== 0)     stats.push(`${g.pop > 0 ? '+' : ''}${g.pop}p`);
+      if (g.cash !== 0)    stats.push(`${g.cash > 0 ? '+' : ''}${g.cash}$`);
+      if (g.trouble !== 0) stats.push(`+${g.trouble}T`);
+      ctx.fillText(stats.join('  '), r.x + 8, r.y + 32);
+      if (g.ability) { ctx.font = 'italic 9px monospace'; ctx.fillText(PH_ABILITY_LABEL[g.ability] || 'ability', r.x + 8, r.y + 46); }
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(r.x, r.y + r.h - 20, r.w, 20);
+      ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 11px monospace';
+      ctx.fillText(`${g.cost} pop`, r.x + 8, r.y + r.h - 7);
+      ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+      ctx.fillText(`${owned} / ${g.max}`, r.x + r.w - 8, r.y + r.h - 7);
+      if (maxed) {
+        ctx.globalAlpha = 0.85; ctx.fillStyle = '#c46a6a'; ctx.textAlign = 'center';
+        ctx.font = 'bold 12px monospace'; ctx.fillText('MAXED', r.x + r.w / 2, r.y + r.h / 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    this._drawButton(ctx, this._expandBtnRect(), `[X] EXPAND $${this.expandCost}`,
+                     this.cash >= this.expandCost ? '#3a7a4a' : '#2a2440',
+                     this.cash >= this.expandCost);
+    this._drawButton(ctx, this._continueBtnRect(), '[SPACE] NEXT DAY', '#5a3a8a', true);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9a8cbe'; ctx.font = '11px monospace';
+    ctx.fillText(`ESC: pause   |   POP ${this.popularity}   CASH $${this.cash}   capacity ${this.houseCapacity}`, W / 2, H - 12);
+  }
+  _drawEndOverlay(ctx, W, H, won) {
+    ctx.fillStyle = won ? 'rgba(40,30,10,0.92)' : 'rgba(20,10,30,0.92)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (won) {
+      ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 72px monospace';
+      ctx.fillText('CHERRY!', W / 2, H / 2 - 100);
+      ctx.fillStyle = '#fff'; ctx.font = '20px monospace';
+      ctx.fillText('four stars at one party', W / 2, H / 2 - 50);
+      ctx.fillText(`cleared in ${this.day} day${this.day === 1 ? '' : 's'}`, W / 2, H / 2 - 20);
+      if (this._newRecord) {
+        ctx.fillStyle = '#f5d76e'; ctx.font = 'bold 22px monospace';
+        ctx.fillText('NEW RECORD', W / 2, H / 2 + 20);
+      } else if (this._savedBest && this._savedBest.fewestDays !== null) {
+        ctx.fillStyle = '#c8b8e0'; ctx.font = '14px monospace';
+        ctx.fillText(`best: ${this._savedBest.fewestDays} days`, W / 2, H / 2 + 20);
+      }
+      ctx.fillStyle = '#c8b8e0'; ctx.font = '14px monospace';
+      ctx.fillText(`total wins: ${(this._savedBest && this._savedBest.totalWins) || 1}`, W / 2, H / 2 + 50);
+    } else {
+      ctx.fillStyle = '#c46a6a'; ctx.font = 'bold 64px monospace';
+      ctx.fillText('THE NIGHTS RAN OUT', W / 2, H / 2 - 60);
+      ctx.fillStyle = '#c8b8e0'; ctx.font = '18px monospace';
+      ctx.fillText('twenty-five days came and went without four stars at one party', W / 2, H / 2 - 10);
+    }
+    ctx.fillStyle = '#9a8cbe'; ctx.font = '13px monospace';
+    ctx.fillText('click or press SPACE to return to the menu', W / 2, H - 40);
+  }
+  _drawMessage(ctx, W, H) {
+    const alpha = Math.min(1, this.messageTimer);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(245,215,110,${alpha})`; ctx.font = 'bold 14px monospace';
+    ctx.fillText(this.message, W / 2, 76);
+  }
+}
+
+
+// ============================================================================
+// Bootstrap
+// ============================================================================
+
+(function() {
+  const canvas = document.getElementById('game');
+  const game = new Engine.Game(canvas, { gameName: 'party-house' });
+  game.setScene(new PHMenuScene(game));
+  game.start();
+})();
+</script>
+</body>
+</html>
