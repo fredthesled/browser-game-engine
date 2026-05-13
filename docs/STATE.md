@@ -4,7 +4,7 @@ Last updated: 2026-05-13
 
 ## Current status
 
-Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed and uploaded to project knowledge, visual verification pending), and Horses Teach Typing v1 (sources and build committed; uploaded to project knowledge, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
+Four games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), and Horses Teach Typing v1 (sources and build committed, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
 
 Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
@@ -24,7 +24,7 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 5. **Project bootstrap regenerated.** `docs/project-bootstrap.md` committed (commit `a794c205`) as the canonical repo copy. Updates the bootstrap to reflect current state: eight engine modules, vendored libs, the bundle artifact, ADRs 0001-0016, four shipped games, ShapeSprite as the sprite primitive, PauseOverlay convention, experimental-probe framing, dead-file convention, and the large-payload safety check. The repo file is the source for future regenerations; the project knowledge upload is where fresh Claude sessions actually load from.
 
-6. **Project knowledge uploads completed by Trevor.** The regenerated `project-bootstrap.md` replaced the prior bootstrap. `engine/engine.bundle.js` was added as a new file (the parallel optimization per ADR-0016 option 3). Trevor also uploaded the four recent game builds (Pong, Survivors, Clown Brawler v2, Horses Teach Typing) as supplementary reference material, with the understanding that this contradicts the rule about not extracting engine code from old builds but is acceptable for using games as reference (a different use case). Files may be pruned later if loading them at session start becomes a token-budget issue.
+6. **Project knowledge contents settled.** The regenerated `project-bootstrap.md` replaced the prior bootstrap. `engine/engine.bundle.js` was added as a new file (the parallel optimization per ADR-0016 option 3). Trevor initially also uploaded the four recent game builds (Pong, Survivors, Clown Brawler v2, Horses Teach Typing) as supplementary reference material, but subsequently deleted them to keep project knowledge lean (the ~200KB combined size would have taxed every session-start regardless of whether the games were actually consulted). Project knowledge now holds only canonical session-startup material: `project-bootstrap.md` and `engine/engine.bundle.js`. Game builds and other reference material remain in the repo and are fetched on demand.
 
 7. **Engine bundle workflow tested via `build/poc-square-v2.html`.** Committed (commit `90fd0485`) as a sibling iteration of the original poc-square build. Inlines `engine/engine.bundle.js` as a single block in place of concatenating the ten individual engine modules, then layers the same game-specific scripts and scenes on top. Trevor visually verified the v2 build behaves identically to v1 (teal square responds to arrow keys, clean console). The bundle is validated as a drop-in for individual-module concatenation. Size went from 8KB (v1, pre-audio/storage) to 45KB (v2, with the full modern engine) because the bundle includes audio.js and storage.js even though poc-square does not exercise them. This trade-off is documented in the build header.
 
@@ -54,8 +54,8 @@ See prior STATE entries: engine (signal-bus, input, script, game-object, scene, 
 
 ## Currently in progress
 
-1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo and project knowledge; needs browser load to confirm.
-2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo and project knowledge; needs browser load to confirm.
+1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo; needs browser load to confirm.
+2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo; needs browser load to confirm.
 
 ## Next up
 
@@ -94,7 +94,6 @@ Real items, blocked behind ADR-0013.
 
 - **Asset sourcing for the eventual raster path**: carrying over from prior session.
 - **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
-- **Game builds in project knowledge**: Trevor uploaded the four recent builds as supplementary reference. Watch for whether they earn their token cost (each session loads them into context). Prune unused ones if context budget starts to feel tight.
 - **poc-square v1 disposition**: now that v2 is verified and is the canonical bundle-inlining reference, the v1 build (`build/poc-square.html`, ~8KB) could be marked DEAD or kept as the documented "individual-module path" example. Recommendation: keep as the example reference per the new CONVENTIONS.md section, since it cleanly shows the alternate path.
 
 ## Sprite generator retirement note
@@ -104,6 +103,7 @@ The original sprite generator concept is retired. The forward path is the proced
 ## Notes for the next session
 
 - **Engine bundle is the canonical engine fetch target.** Per ADR-0016, fetch `engine/engine.bundle.js` for current engine source; do not reconstruct from individual modules and do not extract from old build files. The bundle header includes a SHA list for each source file at generation time, so drift relative to live `engine/` content is detectable by listing the engine directory and comparing. Any commit that touches an engine module must regenerate the bundle in the same commit (CLAUDE.md §8).
+- **Project knowledge scope is lean by default.** Project knowledge holds canonical session-startup material only: `project-bootstrap.md` and `engine/engine.bundle.js`. Specific game builds and other reference material live in the repo and are fetched on demand via `GitHub:get_file_contents`. The reasoning: project knowledge loads every session whether consulted or not, so eagerly cached reference material pays a per-session token tax for occasional benefit. Specific files can be promoted back to project knowledge if usage demonstrates they earn the cost, but the default is lean.
 - **Bundle inlining is the default build-assembly path.** Per CONVENTIONS.md ("Build assembly" section) and validated against `build/poc-square-v2.html` against `build/poc-square.html`, new game builds inline the bundle as a single block, then layer scripts, scenes, and bootstrap. The individual-module path is reserved for minimal POCs that do not use audio or storage, or for diagnostic builds.
 - **`poc-square-v2` is the reference template for the bundle-inlining build pattern.** Its header documents the inlined files and their blob SHAs at the time of assembly. Read it as a template before writing a new build.
 - **Bundle cost trade-off** for games that do not use audio or storage: the bundle adds ~37KB of jsfxr code and a few KB of audio/storage modules even if the game never calls them. For poc-square this took the build from 8KB to 45KB. For non-trivial games (Pong, Survivors, etc., already at ~45KB with the individual-module path), the trade is roughly neutral. If a future game wants the smallest possible build and does not use audio or storage, the individual-module path remains valid per CONVENTIONS.md.
