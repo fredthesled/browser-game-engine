@@ -1,10 +1,10 @@
 # State
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
 
 ## Current status
 
-Five games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), Horses Teach Typing v1 (sources and build committed, visual verification pending), and Party House (sources committed, build pending manual upload, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
+Six games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), Horses Teach Typing v1 (sources and build committed, visual verification pending), Party House (sources committed, build pending manual upload, visual verification pending), and Minesweeper (sources committed, build pending manual upload, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
 
 Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
@@ -12,7 +12,25 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 ## What was done in the most recent session
 
-**Session 2026-05-13 (latest, Party House):**
+**Session 2026-05-14 (latest, Minesweeper):**
+
+1. **New game: Minesweeper.** Classic Win 3.1 Minesweeper with three difficulties: Beginner (9x9, 10 mines), Intermediate (16x16, 40 mines), Expert (30x16, 99 mines). Cell size scales per difficulty (28px Beginner, 26px Intermediate, 18px Expert) so all three boards fit comfortably inside the 900x600 canvas. Standard rules: left click reveals, right click flags, chord click on a satisfied number reveals adjacent unflagged cells. First click is always safe -- mines are placed lazily on the first reveal, excluding both the clicked cell and its 3x3 neighborhood, which guarantees the first click clears at least nine cells.
+
+2. **Save state.** Best times persisted per difficulty via `Engine.storage` under keys `best_beginner`, `best_intermediate`, `best_expert`, each storing a number of seconds (smaller is better). The menu displays the current best for the selected difficulty. New-record callout on the win screen. Game name passed to the Game constructor is `'minesweeper'` so storage keys are namespaced as `minesweeper:best_<key>`.
+
+3. **Two new scenes** under `games/minesweeper/scenes/`:
+   - `MinesweeperMenuScene` (`menu.js`). Title, difficulty select (Up/Down or 1/2/3, or mouse hover + click), best-time panel rendering only when a record exists for the selected difficulty. ENTER or click on the highlighted option transitions to match.
+   - `MinesweeperMatchScene` (`match.js`). All gameplay including board state, lazy mine placement with first-click safety, iterative flood-fill, chord click, timer, mine counter, smiley face restart, win/loss end states with mine-reveal animation, and PauseOverlay integration. No GameObjects: state is scene-level since the game is intrinsically discrete and turn-based, following the Party House pattern. PauseOverlay wired with both `onRestart` (re-enters the match scene with the same difficulty) and `onQuit` (back to menu).
+
+4. **No new scripts.** Minesweeper does not need GameObject-attached behaviors; the board is scene-level state. Reuses the existing PauseOverlay utility.
+
+5. **Mouse-edge-before-pause convention followed.** Mouse just-pressed detection is computed before the PauseOverlay early-return, so clicks made while paused are consumed on their own frame and do not fire as phantom clicks on resume (per the PHMatchScene reference established in the prior session).
+
+6. **Build pending manual upload.** The assembled `build/minesweeper.html` is ~76KB (engine bundle 46KB + pause-overlay 5KB + menu 6KB + match 18KB + bootstrap/HTML wrapper ~1KB). Per the large-payload safety rule, this exceeds the comfortable single-file API push threshold, so the source files were pushed and the build is delivered to Trevor for manual upload.
+
+7. **Registries updated.** `scenes/_registry.md` has new rows for MinesweeperMenuScene and MinesweeperMatchScene. No new entries needed in `scripts/_registry.md` since the game uses only the existing PauseOverlay utility.
+
+**Session 2026-05-13 (Party House):**
 
 1. **New game: Party House.** Single-scenario MVP study of UFO 50 #25 ("Party House" -- note the original title is *Party House*, not the colloquial transposition "House Party"). Deckbuilder where guests are cards in a rolodex; each day you throw a party, guests enter one at a time, generate popularity/cash/trouble, and the goal is four star guests at one successful party within 25 days. Trouble cap of 3 triggers a cop shutdown (no rewards). After a shutdown the player picks one guest type to ban from the next party (one rolodex instance is skipped for one party then returns). Nine guest types in this scope: three free starters (Old Friend, Wild Buddy, Rich Pal) and six shop guests (Cute Dog and Hippie for trouble removal, Auctioneer for Old-Friend-synergy cash, Rock Star for high pop with trouble, Celebrity and Dragon as the two star guests). Five starting house slots, expansion cost starts at $2 and scales by +1 per expansion to a max of $12.
 
@@ -32,66 +50,41 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 **Session 2026-05-13 (earlier, engine bundle work, verification, and convention codification):**
 
-1. **Engine bundle introduced.** `engine/engine.bundle.js` committed (commit `2c338bec`) as the canonical single-file representation of the engine. Concatenates the ten source files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`, `engine/signal-bus.js`, `engine/input.js`, `engine/script.js`, `engine/game-object.js`, `engine/scene.js`, `engine/audio.js`, `engine/storage.js`, `engine/game.js`) in the canonical concat order. Header records generation date, source SHAs at the time of generation, and a regeneration recipe explicit enough that future Claude can rebuild without consulting other docs. Vendored library inline comments were lightly condensed in the bundle to keep the artifact compact; behavior is identical to the source files and the header SHAs reference the canonical source files (not the bundle's condensed copies).
-
-2. **Operating rule added.** CLAUDE.md §8 now carries a bullet directing engine fetches at `engine/engine.bundle.js` and requiring bundle regeneration in any commit that touches an engine module. The rule is enforced by convention, not tooling.
-
-3. **ADR-0016 added.** Documents the bundle as the canonical engine artifact, the rationale (avoiding ten per-session fetches, stale-build-fallback drift observed in the Horses Teach Typing session, and failed `raw.githubusercontent.com` dynamic fetches), the choice of "bundle in repo plus mirror in project knowledge" over "project knowledge only" or "per-file fetch with manifest," and consequences including the regeneration-on-engine-commit obligation.
-
-4. **ARCHITECTURE.md updated.** The bundle is listed in the file layout summary, mentioned in the overview prose, and noted in the build concatenation order section (a build may inline the bundle in place of steps 1-10).
-
-5. **Project bootstrap regenerated.** `docs/project-bootstrap.md` committed (commit `a794c205`) as the canonical repo copy. Updates the bootstrap to reflect current state: eight engine modules, vendored libs, the bundle artifact, ADRs 0001-0016, four shipped games, ShapeSprite as the sprite primitive, PauseOverlay convention, experimental-probe framing, dead-file convention, and the large-payload safety check. The repo file is the source for future regenerations; the project knowledge upload is where fresh Claude sessions actually load from.
-
-6. **Project knowledge contents settled.** The regenerated `project-bootstrap.md` replaced the prior bootstrap. `engine/engine.bundle.js` was added as a new file (the parallel optimization per ADR-0016 option 3). Trevor initially also uploaded the four recent game builds (Pong, Survivors, Clown Brawler v2, Horses Teach Typing) as supplementary reference material, but subsequently deleted them to keep project knowledge lean (the ~200KB combined size would have taxed every session-start regardless of whether the games were actually consulted). Project knowledge now holds only canonical session-startup material: `project-bootstrap.md` and `engine/engine.bundle.js`. Game builds and other reference material remain in the repo and are fetched on demand.
-
-7. **Engine bundle workflow tested via `build/poc-square-v2.html`.** Committed (commit `90fd0485`) as a sibling iteration of the original poc-square build. Inlines `engine/engine.bundle.js` as a single block in place of concatenating the ten individual engine modules, then layers the same game-specific scripts and scenes on top. Trevor visually verified the v2 build behaves identically to v1 (teal square responds to arrow keys, clean console). The bundle is validated as a drop-in for individual-module concatenation. Size went from 8KB (v1, pre-audio/storage) to 45KB (v2, with the full modern engine) because the bundle includes audio.js and storage.js even though poc-square does not exercise them. This trade-off is documented in the build header.
-
-8. **Build-assembly convention codified.** `docs/CONVENTIONS.md` updated with a new "Build assembly (bundle-inlining convention)" section establishing bundle inlining as the default for new builds, with `build/poc-square-v2.html` as the canonical reference template. The section also documents when the individual-module path remains appropriate (minimal POCs not using audio/storage, diagnostic builds). Replaces no prior convention; existing builds are unaffected.
-
-9. **Operational notes.** Two earlier attempts at a single atomic five-file commit failed to complete the response due to combined payload size (bundle plus four doc files at ~115KB total). The work was split into commits (bundle, smaller docs, DECISIONS.md) to fit within response-length limits. A memory rule was added to check in with the user before tool calls with very large payloads.
+See prior STATE.md revisions for the full bundle-introduction session detail. Summary: `engine/engine.bundle.js` introduced as the canonical single-file engine artifact; ADR-0016 added; CLAUDE.md §8 directs engine fetches at the bundle; `build/poc-square-v2.html` validates the bundle-inlining workflow; CONVENTIONS.md "Build assembly" section codifies bundle inlining as the default; project knowledge holds `project-bootstrap.md` and `engine/engine.bundle.js` only.
 
 **Session 2026-05-13 (earlier still, Horses Teach Typing):**
 
-1. **New game: Horses Teach Typing v1.** Rhythm typing where letters scroll right-to-left toward a fixed hit zone next to a horse silhouette. Black-on-white Apple II Oregon Trail aesthetic. Minimal English on the menu beyond the title. Scope was deliberately small per direction from Trevor: minimal UI, start menu, pause menu (volume + restart), base rhythm mechanic. No score screen, no progression, no music, no horse hint-bubble (deferred to v2).
-
-2. **PauseOverlay extension.** `scripts/pause-overlay.js` now accepts an optional `onRestart` callback in addition to the existing `onQuit`. Row layout is data-driven: RESUME and AUDIO always present; RESTART present only if `onRestart` provided; QUIT present only if `onQuit` provided. The panel height scales with row count so a 4-row layout doesn't crowd. Existing callers (`SurvivorsMatchScene`) pass only `onQuit` and are unaffected: same 3-row appearance.
-
-3. **New script:** `RhythmLetter` (`games/horses-teach-typing/scripts/rhythm-letter.js`). Owns one letter character, a spawn time, and a target hit time. Position is time-driven (`x === hitZoneX` exactly when `scene.conductorTime === targetTime`), making the game frame-rate-independent. State machine: alive -> judged -> dead. On entering `judged`, runs a 0.5s feedback animation (floats up, fades out) showing the judgement label, then emits `htt_letter_dead` for the scene to remove the host GameObject.
-
-4. **New scenes:**
-   - `HTTMenuScene` (`games/horses-teach-typing/scenes/htt-menu.js`). Pictographic title screen. Distant mountain silhouette, trail/ground line, animated horse silhouette with subtle head-bob, mini mechanic demo (three letters A/S/D continuously approaching a bracket pictograph), blinking SPACE bar pictograph at the bottom. SPACE or ENTER transitions to match with a 0.35s fade.
-   - `HTTMatchScene` (`games/horses-teach-typing/scenes/htt-match.js`). Core gameplay. 90 BPM conductor advancing at dt per frame, spawns letters at beat-locked times with a 2s lead time. Judgement windows: perfect <=60ms, great <=120ms, good <=180ms, otherwise auto-miss after target+50ms cushion. Scoring: perfect 300, great 200, good 100. Lenient input policy: wrong-key or out-of-window presses are ignored; only letters that pass the hit zone are auto-missed. HUD: SCORE (left), BPM (center), COMBO (right), recent-judgement banner above the hit zone. SFX: `htt-perfect` (laserShoot), `htt-good` (pickupCoin), `htt-miss` (hitHurt) registered in `enter()`. Pause overlay wired with both `onRestart` (re-enters the match scene) and `onQuit` (back to menu).
-
-5. **Build assembled.** `build/horses-teach-typing.html` committed via the single-file `create_or_update_file` payload approach. Concat order: lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap passes `{ gameName: 'horses-teach-typing' }` to the Game constructor so storage is namespaced if v2 adds persistence (e.g., high score).
-
-6. **Registries updated.** `scripts/_registry.md` has a revised PauseOverlay description (mentions onRestart) and a new RhythmLetter row. `scenes/_registry.md` has new HTTMenuScene and HTTMatchScene rows.
+See prior STATE.md revisions for the full Horses Teach Typing session detail. Summary: new game v1 (rhythm typing, Apple II Oregon Trail aesthetic), `RhythmLetter` script with time-driven position, `HTTMenuScene` and `HTTMatchScene`, PauseOverlay extended with optional `onRestart`, build assembled via individual-module concat path (pre-bundle), both registries updated.
 
 ## Previously done
 
-See prior STATE entries: engine (signal-bus, input, script, game-object, scene, game, audio, storage), Pong, PauseOverlay original, Survivors v1-v3, Clown Brawler v1 and v2, SpriteSheet and ShapeSprite scripts.
+See prior STATE entries: engine (signal-bus, input, script, game-object, scene, game, audio, storage), Pong, PauseOverlay original, Survivors v1-v3, Clown Brawler v1 and v2, SpriteSheet and ShapeSprite scripts, Party House, Horses Teach Typing, engine bundle and bundle-inlining convention.
 
 ## Currently in progress
 
 1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo; needs browser load to confirm.
 2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo; needs browser load to confirm.
 3. **Visual verification of `build/party-house.html`** (from 2026-05-13 latest). Build assembled locally and delivered to Trevor for manual upload; needs upload then browser load to confirm.
+4. **Visual verification of `build/minesweeper.html`** (from 2026-05-14). Build assembled locally and delivered to Trevor for manual upload; needs upload then browser load to confirm.
 
 ## Next up
 
-1. **(In progress)** Visual verification of the three pending builds above.
+1. **(In progress)** Visual verification of the four pending builds above.
 
-2. **Party House v2 candidates** (post-verification): hover tooltips on guest cards with full ability description, party-flow animation (guests slide in rather than appear), end-of-day balance sheet (cumulative pop/cash earned), a "view rolodex" toggle on the shop screen, second scenario unlocked after first clear, randomization of starting rolodex shuffle visible to player.
+2. **Minesweeper v2 candidates** (post-verification): question-mark cell state (third right-click cycle, between flag and clear), keyboard navigation (arrow keys move a cursor, space reveal, F flag) for accessibility, custom difficulty input screen, win-streak/loss-streak persistence in addition to best times, optional safe-corner-start variant where the top-left cell is also forced safe.
 
-3. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
+3. **Party House v2 candidates** (post-verification): hover tooltips on guest cards with full ability description, party-flow animation (guests slide in rather than appear), end-of-day balance sheet (cumulative pop/cash earned), a "view rolodex" toggle on the shop screen, second scenario unlocked after first clear, randomization of starting rolodex shuffle visible to player.
 
-4. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+4. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
 
-5. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+5. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+
+6. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
    - **Conductor primitive.** The clock/spawn-cursor pattern in HTTMatchScene is similar to the wave-spawn pattern in SurvivorsMatchScene. A shared `Conductor` or `Scheduler` script could host beat-locked or interval-locked event scheduling.
    - **Real spawner script.** Replaces inlined spawn logic in `SurvivorsMatchScene._spawnEnemy`.
    - **Signal-driven animation player.** Decouples animation state changes from per-script update logic.
    - **Generic health/damage script.** Centralizes the HP, damage, death-emit pattern.
-   - **Mouse-edge detector.** Three games would now benefit from a clean "just-clicked" abstraction layered on `Engine.input.mouse.left`. Could go on Engine.input itself, or as a tiny helper class.
+   - **Mouse-edge detector.** Four games (Survivors, Party House, Minesweeper, eventual Pong retrofit) would now benefit from a clean "just-clicked" abstraction layered on `Engine.input.mouse.left`. Could go on Engine.input itself, or as a tiny helper class.
 
 ## Deferred to shipping mode
 
@@ -102,6 +95,7 @@ Real items, blocked behind ADR-0013.
 - **Clown Brawler**: any further visual upgrades after v2.
 - **Horses Teach Typing**: progression curve, high-score, keyboard-hint bubble, optional music asset path.
 - **Party House**: additional scenarios (the original has five plus a random scenario), more guest types (the original has ~30), Driver/PI/Genie fetch abilities, Photographer copy-effect, Climber scaling popularity, full ban-by-instance UI showing specific guests rather than types, mid-party "end now" decision support including animations.
+- **Minesweeper**: question-mark cell state, keyboard navigation, custom difficulty, win/loss-streak persistence, polished mine-explosion animation, sweep-reveal animation on win.
 - **Common scenes**: shared credits, loading, and main-menu templates.
 
 ## Deferred housekeeping (tool-gated)
@@ -117,8 +111,9 @@ Real items, blocked behind ADR-0013.
 
 - **Asset sourcing for the eventual raster path**: carrying over from prior session.
 - **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
-- **poc-square v1 disposition**: now that v2 is verified and is the canonical bundle-inlining reference, the v1 build (`build/poc-square.html`, ~8KB) could be marked DEAD or kept as the documented "individual-module path" example. Recommendation: keep as the example reference per the new CONVENTIONS.md section, since it cleanly shows the alternate path.
-- **Party House art direction**: the MVP uses flat colored cards with text labels. The original is pixel art. Future iterations could either commit to a small ShapeSprite-based character set or stay with the abstract card aesthetic (which arguably reads more clearly at any zoom level than a faithful pixel rendition would).
+- **poc-square v1 disposition**: keep as the documented "individual-module path" example per the CONVENTIONS.md section.
+- **Party House art direction**: the MVP uses flat colored cards with text labels. The original is pixel art. Future iterations could either commit to a small ShapeSprite-based character set or stay with the abstract card aesthetic.
+- **Minesweeper visual treatment**: the v1 uses the classic Win 3.1 raised/sunken bevel aesthetic rendered procedurally with canvas rectangles. Alternative paths include a ShapeSprite-based tile set (consistent with the engine's procedural-sprite direction) or a flat modern aesthetic in the style of Google's web Minesweeper. The v1 was the safest choice for an MVP; v2 could explore either.
 
 ## Sprite generator retirement note
 
@@ -126,18 +121,18 @@ The original sprite generator concept is retired. The forward path is the proced
 
 ## Notes for the next session
 
-- **Engine bundle is the canonical engine fetch target.** Per ADR-0016, fetch `engine/engine.bundle.js` for current engine source; do not reconstruct from individual modules and do not extract from old build files. The bundle header includes a SHA list for each source file at generation time, so drift relative to live `engine/` content is detectable by listing the engine directory and comparing. Any commit that touches an engine module must regenerate the bundle in the same commit (CLAUDE.md §8).
-- **Project knowledge scope is lean by default.** Project knowledge holds canonical session-startup material only: `project-bootstrap.md` and `engine/engine.bundle.js`. Specific game builds and other reference material live in the repo and are fetched on demand via `GitHub:get_file_contents`. The reasoning: project knowledge loads every session whether consulted or not, so eagerly cached reference material pays a per-session token tax for occasional benefit. Specific files can be promoted back to project knowledge if usage demonstrates they earn the cost, but the default is lean.
-- **Bundle inlining is the default build-assembly path.** Per CONVENTIONS.md ("Build assembly" section) and validated against `build/poc-square-v2.html` against `build/poc-square.html`, new game builds inline the bundle as a single block, then layer scripts, scenes, and bootstrap. The individual-module path is reserved for minimal POCs that do not use audio or storage, or for diagnostic builds.
-- **`poc-square-v2` is the reference template for the bundle-inlining build pattern.** Its header documents the inlined files and their blob SHAs at the time of assembly. Read it as a template before writing a new build.
-- **Bundle cost trade-off** for games that do not use audio or storage: the bundle adds ~37KB of jsfxr code and a few KB of audio/storage modules even if the game never calls them. For poc-square this took the build from 8KB to 45KB. For non-trivial games (Pong, Survivors, etc., already at ~45KB with the individual-module path), the trade is roughly neutral. If a future game wants the smallest possible build and does not use audio or storage, the individual-module path remains valid per CONVENTIONS.md.
-- **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP only (no bash, no local file creation, no present-files). Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response. Past sessions have succeeded at single 45-60KB pushes; the rule is about asking before attempting larger ones.
-- **Horses Teach Typing concat order** (individual-module path, used at the time of the HTT build): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'horses-teach-typing' })`, then `game.setScene(new HTTMenuScene(game))`, then `game.start()`. Going forward, equivalent builds use the bundle-inlining path.
+- **Engine bundle is the canonical engine fetch target.** Per ADR-0016, fetch `engine/engine.bundle.js` for current engine source; do not reconstruct from individual modules and do not extract from old build files. Any commit that touches an engine module must regenerate the bundle in the same commit (CLAUDE.md §8).
+- **Project knowledge scope is lean by default.** Project knowledge holds canonical session-startup material only: `project-bootstrap.md` and `engine/engine.bundle.js`. Specific game builds and other reference material live in the repo and are fetched on demand.
+- **Bundle inlining is the default build-assembly path.** Per CONVENTIONS.md ("Build assembly" section), new game builds inline the bundle as a single block, then layer scripts, scenes, and bootstrap. `poc-square-v2` is the reference template.
+- **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP only (no bash, no local file creation, no present-files). Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response.
+- **Horses Teach Typing concat order** (individual-module path, pre-bundle): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap.
 - **Party House concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'party-house' })`, then `game.setScene(new PHMenuScene(game))`, then `game.start()`.
-- **PauseOverlay row layout**: data-driven now. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`. Existing semantics (RESUME, AUDIO with volume+mute, optional RESTART, optional QUIT) preserved.
-- **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism. Compare to dt-driven movement: it converges over long runs but can drift over many frames with variable dt.
-- **Auto-miss policy**: `cutoff = goodWindow + 0.05` (= 230ms past target). Tunable. The +50ms cushion gives the player a slight overshoot zone past 'good' before the letter is locked into a miss.
-- **Build verification step convention**: prior sessions ran `node --check` on the extracted script tag of the assembled build. This is unavailable when bash is not in the tool surface; the fallback is per-source-file validation before assembly plus visual verification on browser load.
+- **Minesweeper concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'minesweeper' })`, then `game.setScene(new MinesweeperMenuScene(game))`, then `game.start()`. The bootstrap also disables the canvas context menu (`canvas.oncontextmenu = e => e.preventDefault()`) since right-click is used for flagging.
+- **PauseOverlay row layout**: data-driven. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`.
+- **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism.
+- **Auto-miss policy (HTT)**: `cutoff = goodWindow + 0.05` (= 230ms past target).
+- **Build verification step convention**: prior sessions ran `node --check` on the extracted script tag of the assembled build. The fallback when bash is unavailable is per-source-file validation before assembly plus visual verification on browser load.
 - **Engine.storage usage pattern**: bootstrap with `new Engine.Game(canvas, { gameName: 'mygame' })`; thereafter `Engine.storage.save('key', value)` / `Engine.storage.load('key')`.
-- **Pause + mouse-edge interaction**: any scene that mixes PauseOverlay with mouse-click input should compute `_mouseClicked = !_prevMouseLeft && Engine.input.mouse.left` followed by `_prevMouseLeft = Engine.input.mouse.left` BEFORE the `if (this._pause.isPaused()) return;` early-return, so that clicks made while paused are consumed on their own frame and do not fire as phantom clicks on resume. PHMatchScene is the reference implementation.
+- **Pause + mouse-edge interaction**: any scene that mixes PauseOverlay with mouse-click input should compute `_mouseClicked = !_prevMouseLeft && Engine.input.mouse.left` followed by `_prevMouseLeft = Engine.input.mouse.left` BEFORE the `if (this._pause.isPaused()) return;` early-return. PHMatchScene is the reference implementation; MinesweeperMatchScene also follows this pattern (with both left and right mouse buttons tracked).
+- **Right-click input convention**: `Engine.input.mouse.right` is read; the canvas's `contextmenu` event must be suppressed at the bootstrap level. MinesweeperMatchScene is the first scene to use right-click; reference its bootstrap snippet in `build/minesweeper.html` when adding right-click to another game.
 - **Dead files**: run `grep -r DEAD-FILE` to find every parked file. Convention in `docs/DEAD_FILES.md`.
