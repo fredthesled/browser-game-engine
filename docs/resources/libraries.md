@@ -74,6 +74,20 @@ JavaScript libraries we may bundle into games. Every entry includes license, app
   - Speech recognition has narrower browser support (mainly Chromium-based) and usually requires an internet connection.
   - Some browsers gate `speak()` until after a user gesture; trigger TTS from a click or keypress.
 
+## Narrative scripting
+
+### inkjs
+
+- **Library URL**: https://github.com/inkle/inkjs
+- **License**: MIT.
+- **Size**: ~249 KB minified (`ink-full.js`, runtime plus compiler). A runtime-only build (`ink.js`, ~150 KB) is also available if `.ink` is pre-compiled to JSON at author time.
+- **What it does**: Browser runtime for inkle's ink scripting language, used for branching narrative content (dialogue trees, interactive fiction, FTL-style encounter scripts integrated into the game loop). Zero external dependencies. The full distribution bundles both the runtime and the compiler, so games can ship plain `.ink` source and compile at startup.
+- **API surface relevant to games**: `inkjs.Compiler(source).Compile()` produces an `inkjs.Story`. The Story exposes `canContinue`, `Continue()`, `currentChoices`, `currentTags`, `ChooseChoiceIndex(i)`, `ChoosePathString(path)`, `variablesState[name]` (read/write), `BindExternalFunction(name, fn)`, `ObserveVariable(name, fn)`, `state.toJson()`, `state.LoadJson(json)`.
+- **When to use**: Branching narrative content, dialogue trees, encounter scripts, anything where authored prose plus state-dependent choices is the gameplay surface.
+- **When not to use**: Linear text overlays (a string array is enough). Plain state machines (existing scene flow handles those). Generative dialogue (route to an LLM instead).
+- **Integration note**: Wrapped by `Engine.Narrative` (`engine/narrative.js`). Per ADR-0018, the library is vendored at `engine/lib/inkjs.js` but **excluded from the engine bundle** because of its size. Games using narrative include `engine/lib/inkjs.js` in their HTML build **before** the engine bundle (`engine/narrative.js` references the `inkjs` global at construction). Games not using narrative pay no cost.
+- **Authoring**: ink source files are plain text with a clean syntax for knots, stitches, choices, conditionals, and variables. Reference: https://github.com/inkle/ink/blob/master/Documentation/WritingWithInk.md.
+
 ## Collision detection
 
 ### Roll-our-own AABB

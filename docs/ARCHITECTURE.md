@@ -4,7 +4,7 @@ This document describes the engine's design as of the most recent locked-in deci
 
 ## Overview
 
-The engine is composed of eight classes/modules, each in its own file under `engine/`:
+The engine is composed of nine classes/modules, each in its own file under `engine/`:
 
 | File | Class/module | Role |
 |------|--------------|------|
@@ -16,12 +16,13 @@ The engine is composed of eight classes/modules, each in its own file under `eng
 | `engine/input.js` | `Input` (global instance) | Latched keyboard and mouse state, queried per frame. |
 | `engine/audio.js` | `Audio` (global instance) | Procedural sound effects via vendored jsfxr. |
 | `engine/storage.js` | `Storage` (global instance) | Key/value persistence backed by localStorage, with optional per-game namespacing. |
+| `engine/narrative.js` | `Narrative` (per-encounter instance) | Thin wrapper around an inkjs Story for branching narrative content. Not a singleton; instantiated per encounter by game code. |
 
-The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely.
+The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely. `Narrative` is also instantiated freely (typically once per encounter or dialogue surface) and is not held by the Game class.
 
-Vendored third-party code lives under `engine/lib/`. Currently this contains `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. See `engine/lib/README.md` for the source and update procedure.
+Vendored third-party code lives under `engine/lib/`. The bundled libraries are `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. Per ADR-0018, `engine/lib/` may also host **optional** vendored libraries that are explicitly excluded from the engine bundle; `inkjs.js` (inkjs 2.4.0, MIT, ~249 KB) is the first such library and is used by `engine/narrative.js`. Games using narrative include `engine/lib/inkjs.js` in their build before the engine bundle. See `engine/lib/README.md` for sources and update procedures.
 
-A single-file concatenation of all of the above lives at `engine/engine.bundle.js`. It is an auto-generated artifact (committed to the repo so that sessions can fetch it via MCP in one call) and exists per ADR-0016. The bundle is not part of the source; do not edit it directly. Per CLAUDE.md §8, any commit that touches an engine module must regenerate the bundle in the same commit.
+A single-file concatenation of the always-bundled engine modules lives at `engine/engine.bundle.js`. It is an auto-generated artifact (committed to the repo so that sessions can fetch it via MCP in one call) and exists per ADR-0016. The bundle is not part of the source; do not edit it directly. Per CLAUDE.md §8, any commit that touches a bundled engine module must regenerate the bundle in the same commit. Optional vendored libraries (per ADR-0018) are not part of the bundle and do not trigger regeneration when updated.
 
 ## Class contracts
 
@@ -165,6 +166,32 @@ Instantiated by Game and assigned to `Engine.storage`. The namespace is taken fr
 
 Serialization caveats: `undefined` cannot round-trip through JSON; `save()` refuses it with a console warning. Callers wanting to remove a key should call `clear()` explicitly. `null` is a valid value and round-trips correctly. Be aware that `load()` returning `null` is ambiguous (missing vs. explicitly stored null); use `has()` to disambiguate when needed.
 
+### Narrative
+
+Responsibilities: provide a thin JS-side surface for game scenes to drive branching narrative content authored in inkle's ink scripting language. Wraps an `inkjs.Story` instance per ADR-0018.
+
+Not a singleton. Game code instantiates `new Engine.Narrative(source)` whenever it wants to drive an encounter or dialogue, similarly to how a GameObject is instantiated. Multiple Narrative instances can coexist (e.g., one for a tutorial encounter and one for the active mission).
+
+Public API:
+
+- `constructor(source, options = {})` accepts an ink source string. By default, the source is treated as `.ink` text and compiled at runtime via `inkjs.Compiler`. If `options.compiled` is true, `source` is interpreted as compiled JSON (the output of `state.toJson()` or a pre-compiled `.json` file).
+- `continue()` advances the story, collecting every line emitted until the next choice point or story end. Returns an array of `{ text, tags }` objects. `text` has the trailing newline stripped; `tags` is the array of tags active for that line (a copy, so callers can mutate without affecting state).
+- `getChoices()` returns the currently available choices as `{ index, text, tags }` objects, or an empty array if none.
+- `choose(index)` selects a choice by its index. After calling, the story is ready for another `continue()`.
+- `getVar(name)` reads an ink variable. Returns `undefined` if not declared.
+- `setVar(name, value)` writes an ink variable. The variable must be declared in the ink source (with `VAR`) for the write to take effect.
+- `bindExternal(name, fn)` binds a JS function that ink can call via an `EXTERNAL` declaration. Used for game-side side effects (start combat, deal damage, play a sound) triggered by the narrative.
+- `observe(name, fn)` registers a callback fired when the named ink variable changes. The callback receives the new value.
+- `goTo(path)` jumps the story to a named knot or stitch (dot-separated string like `sector_one.shop_intro`).
+- `saveState()` returns a JSON string suitable for persisting via `Engine.storage` alongside other game state.
+- `loadState(json)` restores state from a JSON string previously returned by `saveState()`.
+- `hasEnded` (getter) `true` when the story has nothing more to emit and offers no choices.
+- `story` (getter) the underlying `inkjs.Story` instance, exposed as an escape hatch for advanced uses where the wrapper methods don't suffice.
+
+Dependency: `engine/narrative.js` requires the `inkjs` global to be loaded before any `Engine.Narrative` is constructed. The constructor throws a clear error if `inkjs` is undefined, pointing at ADR-0018 and the build inclusion requirement. The vendored library lives at `engine/lib/inkjs.js` but is **not** in the engine bundle; games using narrative include it in their HTML build before the engine bundle.
+
+State-sync pattern: scenes that combine narrative with other game state (a ship's hull, the player's resources) typically write game state into ink variables at encounter start, run the encounter, then read ink variables back out at encounter end. External functions (`bindExternal`) handle side effects that should fire mid-encounter. Tags on emitted lines (`#color: red`, `#sfx: alarm`) carry presentation hints.
+
 ## Frame lifecycle
 
 For each animation frame the Game class executes, in order:
@@ -266,11 +293,13 @@ engine/
 ├── input.js
 ├── audio.js
 ├── storage.js
+├── narrative.js
 └── lib/
     ├── README.md
     ├── UNLICENSE
-    ├── riffwave.js   (vendored, public domain)
-    └── sfxr.js       (vendored, public domain)
+    ├── riffwave.js   (vendored, public domain, included in bundle)
+    ├── sfxr.js       (vendored, public domain, included in bundle)
+    └── inkjs.js      (vendored, MIT, OPTIONAL: excluded from bundle per ADR-0018)
 ```
 
 ## Build concatenation order
@@ -287,11 +316,14 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 8. `engine/audio.js` (depends on `jsfxr` global from sfxr.js)
 9. `engine/storage.js` (no engine dependencies)
 10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
-11. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, and `Engine.storage`.
-12. Scenes (after the scripts they reference).
-13. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+11. `engine/narrative.js` (no compile-time dependencies; runtime requires `inkjs` global)
+12. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`, and (when used) `Engine.Narrative`.
+13. Scenes (after the scripts they reference).
+14. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 
-Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016) inlines steps 1 through 10 in the canonical order. A build that uses the bundle replaces steps 1 through 10 with a single inline of the bundle file followed by steps 11 through 13. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; per CLAUDE.md §8, any commit that changes an engine module must regenerate the bundle in the same commit.
+Games that use narrative additionally inline `engine/lib/inkjs.js` **before step 1** (or, in the bundle-inlining path described below, before the bundle). The inkjs UMD wrapper installs the `inkjs` global at script-load time; `engine/narrative.js` reads that global at construction time.
+
+Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016) inlines steps 1 through 11 in the canonical order. A build that uses the bundle replaces steps 1 through 11 with a single inline of the bundle file followed by steps 12 through 14. For games using narrative, the sequence becomes: `engine/lib/inkjs.js`, then `engine.bundle.js`, then scripts, scenes, and bootstrap. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; per CLAUDE.md §8, any commit that changes a bundled engine module must regenerate the bundle in the same commit.
 
 ## Open questions and future work
 
