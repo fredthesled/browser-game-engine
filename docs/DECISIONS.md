@@ -243,3 +243,63 @@ Option 3 was chosen because the repo bundle provides the canonical, always-curre
 - The bundle is engine-only. Engine-adjacent code (scripts, scenes, games) is not included. If a similar one-fetch pattern is later wanted for a heavily-shared scripts library (`PauseOverlay`, `ShapeSprite`, etc.), a separate bundle can be added by a future ADR.
 - The user manually uploads the bundle to Claude Project knowledge as the parallel optimization. The repo bundle remains the authoritative source; the project knowledge mirror is a best-effort cache. Sessions trust the in-context copy unless they have reason to suspect drift, in which case they verify by fetching the repo bundle.
 - A note on the bundle's verbatim faithfulness: the 2026-05-13 initial bundle has lightly condensed inline comments in the vendored library files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`) for compactness. All executable code is preserved verbatim. The header SHAs reference the canonical source files, not the bundle's slightly trimmed copies. Future regenerations may either preserve this trimming convention or restore full comments; either is acceptable as long as runtime behavior is unchanged.
+
+## ADR-0017: Visual language and responsive layout
+
+Date: 2026-05-14
+
+**Decision**: Establish a project-wide visual language for menus and UI surfaces, structured as design tokens (semantic-named values for spacing, typography, hit targets, and color roles) plus a logical-canvas convention that lets games render legibly across mobile and desktop viewports. The bootstrap selects a logical canvas size at startup based on the viewport and touch capability, and scenes draw in logical coordinates throughout. Touch capability detection enlarges hit-target minimums but does not yet introduce a touch-to-input mapping. UI primitive Scripts (button, panel, label) are not implemented in this ADR; the first concrete application is a Minesweeper menu polish pass that exercises the tokens through inline drawing. Primitive extraction is deferred to a follow-up ADR once the language has been validated against at least two games.
+
+**Context**: Three pressures converge.
+
+First, structural: every menu in the repo (Pong, Survivors, Clown Brawler, Horses Teach Typing, Party House, Minesweeper) is assembled from raw canvas calls with hand-tuned coordinates. There is no shared notion of "button," "panel," or "spacing," so each menu re-invents these from scratch. The visible symptoms are inconsistent typography across games, button labels colliding with each other or with adjacent shapes, and no consistent hover or selected affordance.
+
+Second, responsive: the project's primary developer codes on mobile while games are also played on desktop. Current canvases are fixed at 900x600 pixels, which assumes a landscape viewport considerably wider than a phone in portrait. On a phone the canvas either letterboxes badly or scales down to the point of illegibility. Touch input is also not modeled in `engine/input.js` (keyboard and mouse only per STATE.md), which the ADR does not try to fix but does anticipate.
+
+Third, forcing function: the next planned commit is a Minesweeper menu polish pass, which would either inherit the existing structural problems or trigger the language work now. Doing the language work first is cheaper than retrofitting a polished menu later.
+
+Three options were considered for the structural fix:
+
+1. *Per-game custom polish, one at a time*. Lowest upfront cost, but every game stays bespoke and the visual collisions return in the next build.
+2. *Shared UI primitive Scripts immediately*. Highest long-term leverage, but requires designing the primitive API before the visual language has been validated by use, and retrofits six existing menus that are working as-is.
+3. *Visual-language tokens first, primitives later (chosen)*. Define the language as design tokens that scenes can reference even via inline drawing. Apply the tokens to one polished menu (Minesweeper) as proof of concept. Promote tokens-plus-inline-drawing into reusable Script primitives only once a second game wants the same vocabulary, at which point the API surface has been informed by actual use.
+
+Two options were considered for the responsive fix:
+
+1. *CSS-scale a fixed canvas*. The canvas stays at 900x600 logical and physical pixels; CSS scales it to fit the viewport. Cheap, no scene-code changes, but text becomes blurry on large monitors and tiny on phones, and aspect ratio mismatch produces letterboxing without recourse.
+2. *Logical canvas with viewport-aware bootstrap (chosen)*. Each game declares one or more logical resolutions (typically a `regular` landscape preset and optionally a `compact` portrait preset). The bootstrap inspects the viewport, picks a logical preset, sets the physical canvas size to match the viewport while preserving aspect ratio, and scenes draw using the logical resolution. Scenes already read `canvas.width` and `canvas.height` for layout in most places, so the change is small. The compact preset is optional; if absent, the bootstrap uses the regular preset and lets it letterbox.
+
+Option 2 was chosen because it preserves visual fidelity at any viewport size, treats portrait phones as a first-class case rather than a degraded landscape view, and requires no engine API change.
+
+**Decision detail**:
+
+*Logical canvas convention*. Each game declares one or two logical resolutions. The convention names them `regular` (landscape, target aspect roughly 3:2) and `compact` (portrait, target aspect roughly 3:5). Default values are `regular: 900x600` and `compact: 540x900`. The bootstrap picks the preset whose aspect ratio is closer to the viewport's, sets `canvas.width` and `canvas.height` to the chosen logical resolution, and uses CSS to scale the element to fit the viewport while preserving aspect ratio. Scene code reads `canvas.width` and `canvas.height` for layout and never assumes a specific value. A game that supports only landscape may omit the compact preset; the bootstrap will then use regular and accept letterboxing on narrow viewports.
+
+*Viewport detection at bootstrap*. The bootstrap reads `window.innerWidth`, `window.innerHeight`, and computes the aspect ratio. It detects touch capability via `('ontouchstart' in window) || navigator.maxTouchPoints > 0`. These values are captured once at startup. Orientation changes during play do not re-bootstrap by default; a future enhancement can listen for `orientationchange` and reset the scene if needed.
+
+*Design tokens (initial values)*. All values are in logical pixels.
+
+Spacing scale: `xs=4`, `sm=8`, `md=16`, `lg=24`, `xl=32`, `xxl=48`.
+
+Typography scale: `small=14`, `body=18`, `label=22`, `heading=36`, `hero=60`. Font family defaults to a stack favoring monospace for the engine's retro aesthetic; per-game themes override.
+
+Hit targets: `mouseMin=32`, `touchMin=48`. A button drawn in a scene reads the active minimum based on the bootstrap's touch detection.
+
+Color roles: `bg`, `surface`, `surfacePressed`, `textPrimary`, `textSecondary`, `accent`, `success`, `danger`. Engine defaults are a neutral palette; each game's theme overrides the role-to-value mapping. The role names are the stable interface.
+
+*UI primitives deferred*. The tokens are usable directly from inline drawing code today. A future ADR will introduce Script primitives (`UiButton`, `UiPanel`, `UiLabel`) once a second game wants the same primitives, at which point the API will be informed by the patterns Minesweeper's menu actually used.
+
+*Touch input scope*. Hit-target enlargement based on touch detection is in scope. Touch-to-pointer event mapping (so right-click flagging works on a phone with a long-press, for example) is out of scope and deferred to a separate ADR. Until that ADR exists, games that require mouse-specific input (like Minesweeper's right-click flag) remain mouse-only and will letterbox sensibly on touch viewports rather than misbehave.
+
+*Per-game theming*. Each game may define a `theme` object that overrides specific token values. Token role names are stable across games; only the values change. Themes live alongside the game's other code under `games/<name>/scripts/ui-theme.js` if non-default, or are defined inline in the game's main menu scene if simple.
+
+**Consequences**:
+
+- Forward, every new menu references the tokens. Whether via inline drawing (current path) or future UI primitive Scripts, the same token vocabulary applies.
+- The first concrete application is the Minesweeper menu polish pass committed alongside this ADR. Tokens for Minesweeper specifically: Win 3.1 grays for surface and surfacePressed; black for textPrimary; the existing LED-style red for accent on counters.
+- Existing menus (Pong, Survivors, Clown Brawler, HTT, Party House) are not retrofitted by this ADR. Retrofits remain in the deferred-to-shipping-mode bucket per ADR-0013. A given game may be polished in a future targeted commit.
+- The Game constructor is unchanged. No engine API change is required. The bootstrap pattern changes, but the Game class is agnostic to logical-vs-physical canvas size since it already reads `canvas.width` and `canvas.height` at draw time. Mouse coordinates from `engine/input.js` are already mapped from physical viewport space to logical canvas space via `getBoundingClientRect()`, so CSS scaling does not affect input correctness.
+- ARCHITECTURE.md gets a new section ("Logical canvas and viewport bootstrap") describing the convention and the reference bootstrap snippet. The Game class section is unchanged.
+- The `scenes-preview.html` harness, when built, will render scenes at both `regular` and `compact` logical resolutions so layout can be inspected at both sizes from one screenshot pass.
+- Token values committed here are starting defaults. Subsequent ADRs may adjust the scale if usage reveals systematic gaps (for example, a missing `xxs=2` for tight UI rows, or a missing `display=84` for splash-screen typography). Adjustments are cheap because token usage is by role name, not by value.
+- This ADR does not introduce a touch input mapping. A game requiring touch-first interaction (a hypothetical future game) will trigger a separate input-system ADR.
