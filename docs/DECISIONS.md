@@ -303,3 +303,38 @@ Color roles: `bg`, `surface`, `surfacePressed`, `textPrimary`, `textSecondary`, 
 - The `scenes-preview.html` harness, when built, will render scenes at both `regular` and `compact` logical resolutions so layout can be inspected at both sizes from one screenshot pass.
 - Token values committed here are starting defaults. Subsequent ADRs may adjust the scale if usage reveals systematic gaps (for example, a missing `xxs=2` for tight UI rows, or a missing `display=84` for splash-screen typography). Adjustments are cheap because token usage is by role name, not by value.
 - This ADR does not introduce a touch input mapping. A game requiring touch-first interaction (a hypothetical future game) will trigger a separate input-system ADR.
+
+## ADR-0018: Optional vendored library pattern; narrative module added via inkjs
+
+Date: 2026-05-19
+
+**Decision**: Establish an "optional vendored library" pattern: a vendored library may live under `engine/lib/` while being explicitly excluded from `engine/engine.bundle.js`. Games that need the library include it separately in their build, before the engine bundle. Add `engine/narrative.js` as the first engine module that depends on an optional library, and vendor `engine/lib/inkjs.js` (inkjs 2.4.0, MIT) as the optional library it wraps. Narrative is added to the bundle; inkjs is not.
+
+**Context**: The next planned game, Drift (an FTL-style space exploration prototype), wants branching narrative content for encounters. Pre-flight research surveyed prior art:
+
+1. *inkle's ink*. A purpose-built scripting language for branching narrative, widely used in shipped games (80 Days, Heaven's Vault, Sorcery!). The browser runtime is `inkjs` (MIT, zero dependencies). Mature, actively maintained, and the canonical choice for browser-side ink. The `ink-full.js` distribution (~249 KB minified) bundles runtime plus compiler, enabling games to ship plain `.ink` text and compile at startup.
+2. *Yarn Spinner*. Comparable feature set, primarily aimed at the Unity ecosystem. Browser support exists but is less mature than inkjs.
+3. *Twine and similar*. Authoring tools rather than runtime libraries; would not address the embedded-in-game-loop use case Drift needs.
+4. *Custom DSL*. Building a minimal branching-text DSL from scratch is feasible but reinvents a well-understood problem space. Per CLAUDE.md §0 (thin wrappers preferred) and §4 (wrap mature tools), a custom DSL is rejected unless a meaningful constraint forbids inkjs.
+
+The structural challenge is size. The engine bundle is currently ~46 KB; inkjs alone is ~249 KB. Bundling inkjs would multiply the engine fetch size by roughly 6x for every game, including those that do not use narrative. Several distribution options were considered:
+
+1. *Include inkjs in the bundle.* Rejected. Bloats every game that does not use narrative, violates ADR-0016's framing of the bundle as the minimal canonical engine artifact, and provides no benefit to non-narrative games.
+2. *Fetch inkjs at runtime from a CDN.* Rejected. Violates ADR-0002 (no external CDN; offline builds are a stated constraint).
+3. *Compile `.ink` to JSON at author time, ship only the runtime (`ink.js`, ~150 KB, no compiler).* Considered. Saves ~100 KB per game by dropping the compiler, but introduces a separate build step (compile `.ink` to `.json` and inline the JSON) that complicates the single-file HTML workflow. Reserved as a future optimization if size pressure ever justifies it; not adopted now.
+4. *Per-game include of `ink-full.js` alongside the engine bundle, with `engine/narrative.js` as a thin JS wrapper inside the bundle (chosen).* Games that use narrative pay the inkjs cost once, in their own build. Games that do not use narrative pay nothing. The wrapper lives in the bundle so it is always available; it errors clearly if inkjs is not loaded.
+
+Option 4 was chosen as the cleanest trade-off: zero overhead for non-narrative games, no build step beyond the existing concatenation, no CDN dependency, and a thin wrapper that gives Drift (and any future narrative game) a consistent JS-side surface.
+
+**Consequences**:
+
+- `engine/narrative.js` is added to the engine. It exposes `Engine.Narrative`, a thin wrapper around `inkjs.Story` with the following surface: `constructor(source, {compiled})`, `continue()`, `getChoices()`, `choose(index)`, `getVar(name)`, `setVar(name, value)`, `bindExternal(name, fn)`, `observe(name, fn)`, `goTo(path)`, `saveState()`, `loadState(json)`, `hasEnded`, and `story` (escape hatch). The wrapper is roughly 100 lines; the rest of the API surface is intentionally left as a passthrough to the underlying `inkjs.Story` instance via the `story` getter.
+- `engine/lib/inkjs.js` is vendored from the npm registry tarball (`inkjs@2.4.0`, `package/dist/ink-full.js`), 248,826 bytes, MIT-licensed. The GitHub release download URL pattern was found to 404; the npm registry is the reliable source.
+- The bundle is regenerated to include `engine/narrative.js` at position 11 (after `engine/game.js`). The bundle header records narrative.js's blob SHA. `engine/lib/inkjs.js` is NOT included in the bundle and is NOT listed in the bundle header's SHA table; it is treated as an out-of-band library.
+- The build concatenation order in `docs/ARCHITECTURE.md` is updated: for games using narrative, include `engine/lib/inkjs.js` BEFORE the engine bundle (since `engine/narrative.js` references the `inkjs` global). For games not using narrative, no change.
+- `CLAUDE.md` §8 is updated to clarify the regeneration rule: any commit that touches a bundled engine module (any `engine/*.js`, or a vendored library in `engine/lib/` that is included in the bundle) must regenerate the bundle. Optional vendored libraries explicitly excluded from the bundle do not require regeneration when updated, since they are not part of the bundle's contents.
+- `engine/narrative.js` throws a clear error in its constructor if `inkjs` is undefined, with a message pointing at this ADR and at the engine/lib/inkjs.js requirement. This makes the dependency failure mode loud, not subtle.
+- Each game using narrative authors `.ink` source files directly in its own folder (e.g., `games/drift/encounters/*.ink`) and either inlines the source as a string at build time or includes the compiled JSON. The wrapper supports both via the `compiled` option on its constructor. The starting convention is plain `.ink` source compiled at runtime; the JSON snapshot path remains available if startup compile time ever becomes a measurable concern.
+- The pattern is reusable. Future libraries may be added under `engine/lib/` with the same "optional, excluded from the bundle" framing. Each such library should have a one-line note in `engine/lib/README.md` indicating bundle-inclusion status. The decision to include or exclude is per-library and is justified at the time of vendoring (size, license, audience).
+- inkjs's license is MIT, satisfying ADR-0009. The vendored file carries the original license header at the top of its UMD wrapper.
+- The upload of `engine/lib/inkjs.js` is a manual user step (248 KB exceeds the comfortable single-file MCP push threshold, consistent with the build/clown-brawler.html workflow). The repo will reflect the optional library once Trevor performs the upload; the engine wrapper and the bundle do not require the library to be present at commit time, only at runtime when `new Engine.Narrative(...)` is called.
