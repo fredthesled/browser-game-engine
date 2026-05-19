@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Minesweeper</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #c0c0c0; image-rendering: pixelated; image-rendering: crisp-edges; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ============================================================================
+// Auto-generated build file. Do not edit directly. Re-assemble from:
+//   engine/engine.bundle.js (per ADR-0016)
+//   scripts/pause-overlay.js
+//   games/minesweeper/scenes/menu.js
+//   games/minesweeper/scenes/match.js
+//   bootstrap snippet (per ADR-0017 viewport-aware sizing)
+// ============================================================================
+
+// ============================================================================
+// engine.bundle.js
+// ============================================================================
+
+var FastBase64 = {
+  chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+  encLookup: [],
+  Init: function() {
+    for (var i=0; i<4096; i++) {
+      this.encLookup[i] = this.chars[i >> 6] + this.chars[i & 0x3F];
+    }
+  },
+  Encode: function(src) {
+    var len = src.length;
+    var dst = '';
+    var i = 0;
+    var n;
+    while (len > 2) {
+      n = (src[i] << 16) | (src[i+1]<<8) | src[i+2];
+      dst+= this.encLookup[n >> 12] + this.encLookup[n & 0xFFF];
+      len-= 3;
+      i+= 3;
+    }
+    if (len > 0) {
+      var n1= (src[i] & 0xFC) >> 2;
+      var n2= (src[i] & 0x03) << 4;
+      if (len > 1) n2 |= (src[++i] & 0xF0) >> 4;
+      dst+= this.chars[n1];
+      dst+= this.chars[n2];
+      if (len == 2) {
+        var n3= (src[i++] & 0x0F) << 2;
+        n3 |= (src[i] & 0xC0) >> 6;
+        dst+= this.chars[n3];
+      }
+      if (len == 1) dst+= '=';
+      dst+= '=';
+    }
+    return dst;
+  }
+}
+FastBase64.Init();
+
+var RIFFWAVE = function(data) {
+  this.data = [];
+  this.wav = [];
+  this.dataURI = '';
+  this.header = {
+    chunkId      : [0x52,0x49,0x46,0x46],
+    chunkSize    : 0,
+    format       : [0x57,0x41,0x56,0x45],
+    subChunk1Id  : [0x66,0x6d,0x74,0x20],
+    subChunk1Size: 16,
+    audioFormat  : 1,
+    numChannels  : 1,
+    sampleRate   : 8000,
+    byteRate     : 0,
+    blockAlign   : 0,
+    bitsPerSample: 8,
+    subChunk2Id  : [0x64,0x61,0x74,0x61],
+    subChunk2Size: 0
+  };
+  function u32ToArray(i) { return [i&0xFF, (i>>8)&0xFF, (i>>16)&0xFF, (i>>24)&0xFF]; }
+  function u16ToArray(i) { return [i&0xFF, (i>>8)&0xFF]; }
+  this.Make = function(data) {
+    if (data instanceof Array) this.data = data;
+    this.header.byteRate = (this.header.sampleRate * this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.blockAlign = (this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.subChunk2Size = this.data.length;
+    this.header.chunkSize = 36 + this.header.subChunk2Size;
+    this.wav = this.header.chunkId.concat(
+      u32ToArray(this.header.chunkSize),
+      this.header.format,
+      this.header.subChunk1Id,
+      u32ToArray(this.header.subChunk1Size),
+      u16ToArray(this.header.audioFormat),
+      u16ToArray(this.header.numChannels),
+      u32ToArray(this.header.sampleRate),
+      u32ToArray(this.header.byteRate),
+      u16ToArray(this.header.blockAlign),
+      u16ToArray(this.header.bitsPerSample),
+      this.header.subChunk2Id,
+      u32ToArray(this.header.subChunk2Size),
+      this.data
+    );
+    this.dataURI = 'data:audio/wav;base64,'+FastBase64.Encode(this.wav);
+  };
+  if (data instanceof Array) this.Make(data);
+};
+if (typeof window !== 'undefined') window.RIFFWAVE = RIFFWAVE;
+
+var SQUARE = 0, SAWTOOTH = 1, SINE = 2, NOISE = 3;
+var masterVolume = 1;
+var OVERSAMPLING = 8;
+var sfxr;
+
+function Params() {
+  this.oldParams = true;
+  this.wave_type = SQUARE;
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.3;
+  this.p_env_punch = 0;
+  this.p_env_decay = 0.4;
+  this.p_base_freq = 0.3;
+  this.p_freq_limit = 0;
+  this.p_freq_ramp = 0;
+  this.p_freq_dramp = 0;
+  this.p_vib_strength = 0;
+  this.p_vib_speed = 0;
+  this.p_arp_mod = 0;
+  this.p_arp_speed = 0;
+  this.p_duty = 0;
+  this.p_duty_ramp = 0;
+  this.p_repeat_speed = 0;
+  this.p_pha_offset = 0;
+  this.p_pha_ramp = 0;
+  this.p_lpf_freq = 1;
+  this.p_lpf_ramp = 0;
+  this.p_lpf_resonance = 0;
+  this.p_hpf_freq = 0;
+  this.p_hpf_ramp = 0;
+  this.sound_vol = 0.5;
+  this.sample_rate = 44100;
+  this.sample_size = 8;
+}
+function sqr(x) { return x * x }
+function cube(x) { return x * x * x }
+function frnd(range) { return Math.random() * range; }
+function rndr(from, to) { return Math.random() * (to - from) + from; }
+function rnd(max) { return Math.floor(Math.random() * (max + 1)); }
+
+Params.prototype.fromJSON = function(struct) {
+  for (var p in struct) if (struct.hasOwnProperty(p)) this[p] = struct[p];
+  return this;
+}
+Params.prototype.pickupCoin = function () {
+  this.wave_type = SAWTOOTH;
+  this.p_base_freq = 0.4 + frnd(0.5);
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.1);
+  this.p_env_decay = 0.1 + frnd(0.4);
+  this.p_env_punch = 0.3 + frnd(0.3);
+  if (rnd(1)) { this.p_arp_speed = 0.5 + frnd(0.2); this.p_arp_mod = 0.2 + frnd(0.4); }
+  return this;
+}
+Params.prototype.laserShoot = function () {
+  this.wave_type = rnd(2);
+  if(this.wave_type === SINE && rnd(1)) this.wave_type = rnd(1);
+  if (rnd(2) === 0) { this.p_base_freq = 0.3 + frnd(0.6); this.p_freq_limit = frnd(0.1); this.p_freq_ramp = -0.35 - frnd(0.3); }
+  else { this.p_base_freq = 0.5 + frnd(0.5); this.p_freq_limit = this.p_base_freq - 0.2 - frnd(0.6); if (this.p_freq_limit < 0.2) this.p_freq_limit = 0.2; this.p_freq_ramp = -0.15 - frnd(0.2); }
+  if (this.wave_type === SAWTOOTH) this.p_duty = 1;
+  if (rnd(1)) { this.p_duty = frnd(0.5); this.p_duty_ramp = frnd(0.2); }
+  else { this.p_duty = 0.4 + frnd(0.5); this.p_duty_ramp = -frnd(0.7); }
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.2);
+  this.p_env_decay = frnd(0.4);
+  if (rnd(1)) this.p_env_punch = frnd(0.3);
+  if (rnd(2) === 0) { this.p_pha_offset = frnd(0.2); this.p_pha_ramp = -frnd(0.2); }
+  this.p_hpf_freq = frnd(0.3);
+  return this;
+}
+Params.prototype.explosion = function () {
+  this.wave_type = NOISE;
+  if (rnd(1)) { this.p_base_freq = sqr(0.1 + frnd(0.4)); this.p_freq_ramp = -0.1 + frnd(0.4); }
+  else { this.p_base_freq = sqr(0.2 + frnd(0.7)); this.p_freq_ramp = -0.2 - frnd(0.2); }
+  if (rnd(4) === 0) this.p_freq_ramp = 0;
+  if (rnd(2) === 0) this.p_repeat_speed = 0.3 + frnd(0.5);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.3);
+  this.p_env_decay = frnd(0.5);
+  if (rnd(1)) { this.p_pha_offset = -0.3 + frnd(0.9); this.p_pha_ramp = -frnd(0.3); }
+  this.p_env_punch = 0.2 + frnd(0.6);
+  if (rnd(1)) { this.p_vib_strength = frnd(0.7); this.p_vib_speed = frnd(0.6); }
+  if (rnd(2) === 0) { this.p_arp_speed = 0.6 + frnd(0.3); this.p_arp_mod = 0.8 - frnd(1.6); }
+  return this;
+}
+Params.prototype.powerUp = function () {
+  if (rnd(1)) { this.wave_type = SAWTOOTH; this.p_duty = 1; } else { this.p_duty = frnd(0.6); }
+  this.p_base_freq = 0.2 + frnd(0.3);
+  if (rnd(1)) { this.p_freq_ramp = 0.1 + frnd(0.4); this.p_repeat_speed = 0.4 + frnd(0.4); }
+  else { this.p_freq_ramp = 0.05 + frnd(0.2); if (rnd(1)) { this.p_vib_strength = frnd(0.7); this.p_vib_speed = frnd(0.6); } }
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.4);
+  this.p_env_decay = 0.1 + frnd(0.4);
+  return this;
+}
+Params.prototype.hitHurt = function () {
+  this.wave_type = rnd(2);
+  if (this.wave_type === SINE) this.wave_type = NOISE;
+  if (this.wave_type === SQUARE) this.p_duty = frnd(0.6);
+  if (this.wave_type === SAWTOOTH) this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.6);
+  this.p_freq_ramp = -0.3 - frnd(0.4);
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.1);
+  this.p_env_decay = 0.1 + frnd(0.2);
+  if (rnd(1)) this.p_hpf_freq = frnd(0.3);
+  return this;
+}
+Params.prototype.jump = function () {
+  this.wave_type = SQUARE;
+  this.p_duty = frnd(0.6);
+  this.p_base_freq = 0.3 + frnd(0.3);
+  this.p_freq_ramp = 0.1 + frnd(0.2);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.3);
+  this.p_env_decay = 0.1 + frnd(0.2);
+  if (rnd(1)) this.p_hpf_freq = frnd(0.3);
+  if (rnd(1)) this.p_lpf_freq = 1 - frnd(0.6);
+  return this;
+}
+Params.prototype.blipSelect = function () {
+  this.wave_type = rnd(1);
+  if (this.wave_type === SQUARE) this.p_duty = frnd(0.6); else this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.4);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.1);
+  this.p_env_decay = frnd(0.2);
+  this.p_hpf_freq = 0.1;
+  return this;
+}
+Params.prototype.synth = function () {
+  this.wave_type = rnd(1);
+  this.p_base_freq = [0.2723171360931539, 0.19255692561524382, 0.13615778746815113][rnd(2)];
+  this.p_env_attack = rnd(4) > 3 ? frnd(0.5) : 0;
+  this.p_env_sustain = frnd(1);
+  this.p_env_punch = frnd(1);
+  this.p_env_decay = frnd(0.9) + 0.1;
+  this.p_arp_mod = [0, 0, 0, 0, -0.3162, 0.7454, 0.7454][rnd(6)];
+  this.p_arp_speed = frnd(0.5) + 0.4;
+  this.p_duty = frnd(1);
+  this.p_duty_ramp = rnd(2) == 2 ? frnd(1) : 0;
+  this.p_lpf_freq = [1, 0.9 * frnd(1) * frnd(1) + 0.1][rnd(1)];
+  this.p_lpf_ramp = rndr(-1, 1);
+  this.p_lpf_resonance = frnd(1);
+  this.p_hpf_freq = rnd(3) == 3 ? frnd(1) : 0;
+  this.p_hpf_ramp = rnd(3) == 3 ? frnd(1) : 0;
+  return this;
+}
+Params.prototype.tone = function () {
+  this.wave_type = SINE;
+  this.p_base_freq = 0.35173364;
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.6641;
+  this.p_env_decay = 0;
+  this.p_env_punch = 0;
+  return this;
+}
+Params.prototype.click = function() {
+  var base = ["explosion", "hitHurt"][rnd(1)];
+  this[base]();
+  if (rnd(1)) this.p_freq_ramp = -0.5 + frnd(1.0);
+  if (rnd(1)) { this.p_env_sustain = (frnd(0.4) + 0.2) * this.p_env_sustain; this.p_env_decay = (frnd(0.4) + 0.2) * this.p_env_decay; }
+  if (rnd(3) == 0) this.p_env_attack = frnd(0.3);
+  this.p_base_freq = 1 - frnd(0.25);
+  this.p_hpf_freq = 1 - frnd(0.1);
+  return this;
+}
+Params.prototype.random = function () {
+  this.wave_type = rnd(3);
+  if (rnd(1)) this.p_base_freq = cube(frnd(2) - 1) + 0.5; else this.p_base_freq = sqr(frnd(1));
+  this.p_freq_limit = 0;
+  this.p_freq_ramp = Math.pow(frnd(2) - 1, 5);
+  if (this.p_base_freq > 0.7 && this.p_freq_ramp > 0.2) this.p_freq_ramp = -this.p_freq_ramp;
+  if (this.p_base_freq < 0.2 && this.p_freq_ramp < -0.05) this.p_freq_ramp = -this.p_freq_ramp;
+  this.p_freq_dramp = Math.pow(frnd(2) - 1, 3);
+  this.p_duty = frnd(2) - 1;
+  this.p_duty_ramp = Math.pow(frnd(2) - 1, 3);
+  this.p_vib_strength = Math.pow(frnd(2) - 1, 3);
+  this.p_vib_speed = rndr(-1, 1);
+  this.p_env_attack = cube(rndr(-1, 1));
+  this.p_env_sustain = sqr(rndr(-1, 1));
+  this.p_env_decay = rndr(-1, 1);
+  this.p_env_punch = Math.pow(frnd(0.8), 2);
+  if (this.p_env_attack + this.p_env_sustain + this.p_env_decay < 0.2) { this.p_env_sustain += 0.2 + frnd(0.3); this.p_env_decay += 0.2 + frnd(0.3); }
+  this.p_lpf_resonance = rndr(-1, 1);
+  this.p_lpf_freq = 1 - Math.pow(frnd(1), 3);
+  this.p_lpf_ramp = Math.pow(frnd(2) - 1, 3);
+  if (this.p_lpf_freq < 0.1 && this.p_lpf_ramp < -0.05) this.p_lpf_ramp = -this.p_lpf_ramp;
+  this.p_hpf_freq = Math.pow(frnd(1), 5);
+  this.p_hpf_ramp = Math.pow(frnd(2) - 1, 5);
+  this.p_pha_offset = Math.pow(frnd(2) - 1, 3);
+  this.p_pha_ramp = Math.pow(frnd(2) - 1, 3);
+  this.p_repeat_speed = frnd(2) - 1;
+  this.p_arp_speed = frnd(2) - 1;
+  this.p_arp_mod = frnd(2) - 1;
+  return this;
+}
+
+sfxr = {};
+sfxr.toWave = function(synthdef) { return (new SoundEffect(synthdef)).generate(); };
+sfxr.toAudio = function(synthdef) { return sfxr.toWave(synthdef).getAudio(); }
+sfxr.generate = function(algorithm, options) {
+  var p = new Params();
+  var opts = options || {};
+  p.sound_vol = opts["sound_vol"] || 0.25;
+  p.sample_rate = opts["sample_rate"] || 44100;
+  p.sample_size = opts["sample_size"] || 8;
+  return p[algorithm]();
+}
+
+function SoundEffect(ps) { this.init(ps); }
+SoundEffect.prototype.init = function (ps) {
+  this.parameters = ps;
+  this.initForRepeat();
+  this.waveShape = parseInt(ps.wave_type);
+  this.fltw = Math.pow(ps.p_lpf_freq, 3) * 0.1;
+  this.enableLowPassFilter = (ps.p_lpf_freq != 1);
+  this.fltw_d = 1 + ps.p_lpf_ramp * 0.0001;
+  this.fltdmp = 5 / (1 + Math.pow(ps.p_lpf_resonance, 2) * 20) * (0.01 + this.fltw);
+  if (this.fltdmp > 0.8) this.fltdmp=0.8;
+  this.flthp = Math.pow(ps.p_hpf_freq, 2) * 0.1;
+  this.flthp_d = 1 + ps.p_hpf_ramp * 0.0003;
+  this.vibratoSpeed = Math.pow(ps.p_vib_speed, 2) * 0.01;
+  this.vibratoAmplitude = ps.p_vib_strength * 0.5;
+  this.envelopeLength = [
+    Math.floor(ps.p_env_attack * ps.p_env_attack * 100000),
+    Math.floor(ps.p_env_sustain * ps.p_env_sustain * 100000),
+    Math.floor(ps.p_env_decay * ps.p_env_decay * 100000)
+  ];
+  this.envelopePunch = ps.p_env_punch;
+  this.flangerOffset = Math.pow(ps.p_pha_offset, 2) * 1020;
+  if (ps.p_pha_offset < 0) this.flangerOffset = -this.flangerOffset;
+  this.flangerOffsetSlide = Math.pow(ps.p_pha_ramp, 2) * 1;
+  if (ps.p_pha_ramp < 0) this.flangerOffsetSlide = -this.flangerOffsetSlide;
+  this.repeatTime = Math.floor(Math.pow(1 - ps.p_repeat_speed, 2) * 20000 + 32);
+  if (ps.p_repeat_speed === 0) this.repeatTime = 0;
+  this.gain = Math.exp(ps.sound_vol) - 1;
+  this.sampleRate = ps.sample_rate;
+  this.bitsPerChannel = ps.sample_size;
+}
+SoundEffect.prototype.initForRepeat = function() {
+  var ps = this.parameters;
+  this.elapsedSinceRepeat = 0;
+  this.period = 100 / (ps.p_base_freq * ps.p_base_freq + 0.001);
+  this.periodMax = 100 / (ps.p_freq_limit * ps.p_freq_limit + 0.001);
+  this.enableFrequencyCutoff = (ps.p_freq_limit > 0);
+  this.periodMult = 1 - Math.pow(ps.p_freq_ramp, 3) * 0.01;
+  this.periodMultSlide = -Math.pow(ps.p_freq_dramp, 3) * 0.000001;
+  this.dutyCycle = 0.5 - ps.p_duty * 0.5;
+  this.dutyCycleSlide = -ps.p_duty_ramp * 0.00005;
+  if (ps.p_arp_mod >= 0) this.arpeggioMultiplier = 1 - Math.pow(ps.p_arp_mod, 2) * .9;
+  else this.arpeggioMultiplier = 1 + Math.pow(ps.p_arp_mod, 2) * 10;
+  this.arpeggioTime = Math.floor(Math.pow(1 - ps.p_arp_speed, 2) * 20000 + 32);
+  if (ps.p_arp_speed === 1) this.arpeggioTime = 0;
+}
+SoundEffect.prototype.getRawBuffer = function () {
+  var fltp = 0, fltdp = 0, fltphp = 0;
+  var noise_buffer = Array(32);
+  for (var i = 0; i < 32; ++i) noise_buffer[i] = Math.random() * 2 - 1;
+  var envelopeStage = 0, envelopeElapsed = 0;
+  var vibratoPhase = 0;
+  var phase = 0, ipp = 0;
+  var flanger_buffer = Array(1024);
+  for (var i = 0; i < 1024; ++i) flanger_buffer[i] = 0;
+  var num_clipped = 0;
+  var buffer = [], normalized = [];
+  var sample_sum = 0, num_summed = 0;
+  var summands = Math.floor(44100 / this.sampleRate);
+  for(var t = 0; ; ++t) {
+    if (this.repeatTime != 0 && ++this.elapsedSinceRepeat >= this.repeatTime) this.initForRepeat();
+    if(this.arpeggioTime != 0 && t >= this.arpeggioTime) { this.arpeggioTime = 0; this.period *= this.arpeggioMultiplier; }
+    this.periodMult += this.periodMultSlide;
+    this.period *= this.periodMult;
+    if(this.period > this.periodMax) { this.period = this.periodMax; if (this.enableFrequencyCutoff) break; }
+    var rfperiod = this.period;
+    if (this.vibratoAmplitude > 0) { vibratoPhase += this.vibratoSpeed; rfperiod = this.period * (1 + Math.sin(vibratoPhase) * this.vibratoAmplitude); }
+    var iperiod = Math.floor(rfperiod);
+    if (iperiod < OVERSAMPLING) iperiod = OVERSAMPLING;
+    this.dutyCycle += this.dutyCycleSlide;
+    if (this.dutyCycle < 0) this.dutyCycle = 0;
+    if (this.dutyCycle > 0.5) this.dutyCycle = 0.5;
+    if (++envelopeElapsed > this.envelopeLength[envelopeStage]) {
+      envelopeElapsed = 0;
+      if (++envelopeStage > 2) break;
+    }
+    var env_vol;
+    var envf = envelopeElapsed / this.envelopeLength[envelopeStage];
+    if (envelopeStage === 0) env_vol = envf;
+    else if (envelopeStage === 1) env_vol = 1 + (1 - envf) * 2 * this.envelopePunch;
+    else env_vol = 1 - envf;
+    this.flangerOffset += this.flangerOffsetSlide;
+    var iphase = Math.abs(Math.floor(this.flangerOffset));
+    if (iphase > 1023) iphase = 1023;
+    if (this.flthp_d != 0) {
+      this.flthp *= this.flthp_d;
+      if (this.flthp < 0.00001) this.flthp = 0.00001;
+      if (this.flthp > 0.1) this.flthp = 0.1;
+    }
+    var sample = 0;
+    for (var si = 0; si < OVERSAMPLING; ++si) {
+      var sub_sample = 0;
+      phase++;
+      if (phase >= iperiod) {
+        phase %= iperiod;
+        if (this.waveShape === NOISE) for(var i = 0; i < 32; ++i) noise_buffer[i] = Math.random() * 2 - 1;
+      }
+      var fp = phase / iperiod;
+      if (this.waveShape === SQUARE) { if (fp < this.dutyCycle) sub_sample=0.5; else sub_sample=-0.5; }
+      else if (this.waveShape === SAWTOOTH) { if (fp < this.dutyCycle) sub_sample = -1 + 2 * fp/this.dutyCycle; else sub_sample = 1 - 2 * (fp-this.dutyCycle)/(1-this.dutyCycle); }
+      else if (this.waveShape === SINE) sub_sample = Math.sin(fp * 2 * Math.PI);
+      else if (this.waveShape === NOISE) sub_sample = noise_buffer[Math.floor(phase * 32 / iperiod)];
+      else throw "ERROR: Bad wave type: " + this.waveShape;
+      var pp = fltp;
+      this.fltw *= this.fltw_d;
+      if (this.fltw < 0) this.fltw = 0;
+      if (this.fltw > 0.1) this.fltw = 0.1;
+      if (this.enableLowPassFilter) { fltdp += (sub_sample - fltp) * this.fltw; fltdp -= fltdp * this.fltdmp; }
+      else { fltp = sub_sample; fltdp = 0; }
+      fltp += fltdp;
+      fltphp += fltp - pp;
+      fltphp -= fltphp * this.flthp;
+      sub_sample = fltphp;
+      flanger_buffer[ipp & 1023] = sub_sample;
+      sub_sample += flanger_buffer[(ipp - iphase + 1024) & 1023];
+      ipp = (ipp + 1) & 1023;
+      sample += sub_sample * env_vol;
+    }
+    sample_sum += sample;
+    if (++num_summed >= summands) { num_summed = 0; sample = sample_sum / summands; sample_sum = 0; }
+    else continue;
+    sample = sample / OVERSAMPLING * masterVolume;
+    sample *= this.gain;
+    normalized.push(sample);
+    if (this.bitsPerChannel === 8) {
+      sample = Math.floor((sample + 1) * 128);
+      if (sample > 255) { sample = 255; ++num_clipped; } else if (sample < 0) { sample = 0; ++num_clipped; }
+      buffer.push(sample);
+    } else {
+      sample = Math.floor(sample * (1<<15));
+      if (sample >= (1<<15)) { sample = (1 << 15)-1; ++num_clipped; } else if (sample < -(1<<15)) { sample = -(1 << 15); ++num_clipped; }
+      buffer.push(sample & 0xFF);
+      buffer.push((sample >> 8) & 0xFF);
+    }
+  }
+  return { "buffer": buffer, "normalized": normalized, "clipped": num_clipped };
+}
+SoundEffect.prototype.generate = function() {
+  var rendered = this.getRawBuffer();
+  var wave = new RIFFWAVE();
+  wave.header.sampleRate = this.sampleRate;
+  wave.header.bitsPerSample = this.bitsPerChannel;
+  wave.Make(rendered.buffer);
+  wave.clipping = rendered.clipped;
+  wave.buffer = rendered.normalized;
+  wave.getAudio = _sfxr_getAudioFn(wave);
+  return wave;
+}
+var _actx = null;
+var _sfxr_getAudioFn = function(wave) {
+  return function() {
+    var actx = null;
+    if (!_actx) {
+      if ('AudioContext' in window) _actx = new AudioContext();
+      else if ('webkitAudioContext' in window) _actx = new webkitAudioContext();
+    }
+    actx = _actx;
+    if (actx) {
+      var buff = actx.createBuffer(1, wave.buffer.length, wave.header.sampleRate);
+      var nowBuffering = buff.getChannelData(0);
+      for (var i=0;i<wave.buffer.length;i++) nowBuffering[i] = wave.buffer[i];
+      var volume = 1.0;
+      var obj = {
+        "channels": [],
+        "setVolume": function(v) { volume = v; return obj; },
+        "play": function() {
+          var proc = actx.createBufferSource();
+          proc.buffer = buff;
+          var gainNode = actx.createGain();
+          gainNode.gain.value = volume;
+          gainNode.connect(actx.destination);
+          proc.connect(gainNode);
+          if (proc["start"]) proc.start();
+          else if (proc["noteOn"]) proc.noteOn(0);
+          this.channels.push(proc);
+          return proc;
+        }
+      };
+      return obj;
+    } else {
+      var audio = new Audio();
+      audio.src = wave.dataURI;
+      return audio;
+    }
+  };
+};
+if (typeof window !== 'undefined') window.jsfxr = { sfxr: sfxr };
+var jsfxr = { sfxr: sfxr };
+
+var Engine = Engine || {};
+
+class SignalBus {
+  constructor() { this._listeners = new Map(); }
+  emit(name, payload) {
+    const handlers = this._listeners.get(name);
+    if (!handlers) return;
+    for (const handler of [...handlers]) handler(payload);
+  }
+  on(name, handler) {
+    if (!this._listeners.has(name)) this._listeners.set(name, new Set());
+    this._listeners.get(name).add(handler);
+    return () => this.off(name, handler);
+  }
+  off(name, handler) {
+    const handlers = this._listeners.get(name);
+    if (!handlers) return;
+    handlers.delete(handler);
+    if (handlers.size === 0) this._listeners.delete(name);
+  }
+}
+Engine.SignalBus = SignalBus;
+Engine.signals = new SignalBus();
+
+class Input {
+  constructor(canvas = null) {
+    this._down = new Set();
+    this._justPressed = new Set();
+    this._justReleased = new Set();
+    this._pendingPressed = new Set();
+    this._pendingReleased = new Set();
+    this.mouse = { x: 0, y: 0, left: false, right: false };
+    this._canvas = canvas;
+    window.addEventListener('keydown', (e) => {
+      if (!this._down.has(e.key)) this._pendingPressed.add(e.key);
+      this._down.add(e.key);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (this._down.has(e.key)) this._pendingReleased.add(e.key);
+      this._down.delete(e.key);
+    });
+    const moveTarget = canvas || window;
+    moveTarget.addEventListener('mousemove', (e) => {
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        this.mouse.x = (e.clientX - rect.left) * scaleX;
+        this.mouse.y = (e.clientY - rect.top) * scaleY;
+      } else { this.mouse.x = e.clientX; this.mouse.y = e.clientY; }
+    });
+    const downTarget = canvas || window;
+    downTarget.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.mouse.left = true;
+      if (e.button === 2) this.mouse.right = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouse.left = false;
+      if (e.button === 2) this.mouse.right = false;
+    });
+  }
+  isDown(key) { return this._down.has(key); }
+  wasJustPressed(key) { return this._justPressed.has(key); }
+  wasJustReleased(key) { return this._justReleased.has(key); }
+  update() {
+    this._justPressed = this._pendingPressed;
+    this._justReleased = this._pendingReleased;
+    this._pendingPressed = new Set();
+    this._pendingReleased = new Set();
+  }
+}
+Engine.Input = Input;
+
+class Script {
+  constructor(host) { this.host = host; }
+  on_enter() {}
+  update(_dt) {}
+  draw(_ctx) {}
+  on_exit() {}
+}
+Engine.Script = Script;
+
+class GameObject {
+  constructor(x = 0, y = 0) {
+    this.x = x; this.y = y;
+    this.rotation = 0;
+    this.scale = 1;
+    this.scripts = [];
+  }
+  attach(script) {
+    this.scripts.push(script);
+    if (typeof script.on_enter === 'function') script.on_enter();
+    return script;
+  }
+  detach(script) {
+    const i = this.scripts.indexOf(script);
+    if (i === -1) return;
+    this.scripts.splice(i, 1);
+    if (typeof script.on_exit === 'function') script.on_exit();
+  }
+  update(dt) {
+    for (const s of this.scripts) if (typeof s.update === 'function') s.update(dt);
+  }
+  draw(ctx) {
+    for (const s of this.scripts) if (typeof s.draw === 'function') s.draw(ctx);
+  }
+}
+Engine.GameObject = GameObject;
+
+class Scene {
+  constructor() { this.objects = []; }
+  enter() {}
+  exit() {}
+  add(obj) { this.objects.push(obj); return obj; }
+  remove(obj) {
+    const i = this.objects.indexOf(obj);
+    if (i !== -1) this.objects.splice(i, 1);
+  }
+  update(dt) {
+    for (const obj of [...this.objects]) obj.update(dt);
+    this._collisionPass();
+  }
+  draw(ctx) {
+    for (const obj of this.objects) {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+      ctx.rotate(obj.rotation);
+      ctx.scale(obj.scale, obj.scale);
+      obj.draw(ctx);
+      ctx.restore();
+    }
+  }
+  _collisionPass() {
+    const colliders = [];
+    for (const obj of this.objects) for (const s of obj.scripts) if (s.isCollider) colliders.push(s);
+    for (let i = 0; i < colliders.length; i++) {
+      const a = colliders[i];
+      const aBox = a.getAabb();
+      for (let j = i + 1; j < colliders.length; j++) {
+        const b = colliders[j];
+        const bBox = b.getAabb();
+        if (aBox.x < bBox.x + bBox.w && aBox.x + aBox.w > bBox.x &&
+            aBox.y < bBox.y + bBox.h && aBox.y + aBox.h > bBox.y) {
+          a.onCollide(b);
+          b.onCollide(a);
+        }
+      }
+    }
+  }
+}
+Engine.Scene = Scene;
+
+class EngineAudio {
+  constructor() { this._sounds=new Map(); this._cache=new Map(); this._volume=0.5; this._muted=false; }
+  register(name, paramsOrPreset) {
+    const params = typeof paramsOrPreset==='string' ? jsfxr.sfxr.generate(paramsOrPreset) : paramsOrPreset;
+    this._sounds.set(name, params); this._cache.delete(name);
+  }
+  play(name) {
+    if (this._muted) return;
+    const params = this._sounds.get(name);
+    if (!params) { console.warn(`Engine.audio: unknown sound '${name}'`); return; }
+    let audio = this._cache.get(name);
+    if (!audio) { audio = jsfxr.sfxr.toAudio(params); this._cache.set(name, audio); }
+    audio.setVolume(this._volume); audio.play();
+  }
+  setVolume(v) { this._volume = Math.max(0, Math.min(1, v)); }
+  getVolume()  { return this._volume; }
+  setMuted(b)  { this._muted = !!b; }
+  isMuted()    { return this._muted; }
+}
+Engine.Audio = EngineAudio;
+
+class EngineStorage {
+  constructor(namespace) {
+    this._namespace = namespace || '';
+    this._prefix = this._namespace ? this._namespace + ':' : '';
+    this._available = this._detectAvailable();
+    this._fallback = this._available ? null : new Map();
+  }
+  _detectAvailable() {
+    try {
+      const probe = '__engine_storage_probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return true;
+    } catch (e) { return false; }
+  }
+  isAvailable() { return this._available; }
+  getNamespace() { return this._namespace; }
+  _fullKey(key) { return this._prefix + key; }
+  save(key, value) {
+    if (value === undefined) { console.warn(`Engine.storage.save: refusing to save undefined for key '${key}'.`); return false; }
+    let serialized;
+    try { serialized = JSON.stringify(value); }
+    catch (e) { console.warn(`Engine.storage.save: cannot serialize value for key '${key}':`, e); return false; }
+    const fk = this._fullKey(key);
+    if (!this._available) { this._fallback.set(fk, serialized); return true; }
+    try { window.localStorage.setItem(fk, serialized); return true; }
+    catch (e) { console.warn(`Engine.storage.save: localStorage.setItem failed for key '${key}':`, e); return false; }
+  }
+  load(key, defaultValue = null) {
+    const fk = this._fullKey(key);
+    let raw;
+    if (!this._available) raw = this._fallback.has(fk) ? this._fallback.get(fk) : null;
+    else raw = window.localStorage.getItem(fk);
+    if (raw === null) return defaultValue;
+    try { return JSON.parse(raw); }
+    catch (e) { console.warn(`Engine.storage.load: cannot parse stored value for key '${key}':`, e); return defaultValue; }
+  }
+  has(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) return this._fallback.has(fk);
+    return window.localStorage.getItem(fk) !== null;
+  }
+  clear(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) { this._fallback.delete(fk); return; }
+    window.localStorage.removeItem(fk);
+  }
+  clearAll() {
+    if (!this._available) {
+      if (!this._prefix) { this._fallback.clear(); return; }
+      for (const k of [...this._fallback.keys()]) if (k.startsWith(this._prefix)) this._fallback.delete(k);
+      return;
+    }
+    if (!this._prefix) { window.localStorage.clear(); return; }
+    const toRemove = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(this._prefix)) toRemove.push(k);
+    }
+    for (const k of toRemove) window.localStorage.removeItem(k);
+  }
+  keys() {
+    const out = [];
+    if (!this._available) {
+      for (const k of this._fallback.keys()) {
+        if (!this._prefix) { out.push(k); continue; }
+        if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+      }
+      return out;
+    }
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k === null) continue;
+      if (!this._prefix) { out.push(k); continue; }
+      if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+    }
+    return out;
+  }
+}
+Engine.Storage = EngineStorage;
+
+class Game {
+  constructor(canvas, options = {}) {
+    if (!canvas || typeof canvas.getContext !== 'function') throw new Error('Game requires a canvas element.');
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.gameName = options.gameName || '';
+    this.currentScene = null;
+    this._pendingScene = null;
+    this._lastFrameTime = 0;
+    this._animationHandle = null;
+    this._running = false;
+    Engine.input = new Engine.Input(canvas);
+    Engine.audio = new Engine.Audio();
+    Engine.storage = new Engine.Storage(this.gameName);
+  }
+  start() {
+    if (this._running) return;
+    this._running = true;
+    this._lastFrameTime = performance.now();
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+  stop() {
+    this._running = false;
+    if (this._animationHandle !== null) { cancelAnimationFrame(this._animationHandle); this._animationHandle = null; }
+  }
+  setScene(scene) { this._pendingScene = scene; }
+  _frame(now) {
+    if (!this._running) return;
+    let dt = (now - this._lastFrameTime) / 1000;
+    if (dt > 0.1) dt = 0.1;
+    this._lastFrameTime = now;
+    if (this._pendingScene) {
+      if (this.currentScene) this.currentScene.exit();
+      this.currentScene = this._pendingScene;
+      this._pendingScene = null;
+      this.currentScene.enter();
+    }
+    Engine.input.update();
+    if (this.currentScene) {
+      this.currentScene.update(dt);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.currentScene.draw(this.ctx);
+    }
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+}
+Engine.Game = Game;
+
+// ============================================================================
+// scripts/pause-overlay.js
+// ============================================================================
+
+class PauseOverlay {
+  constructor(game, options = {}) {
+    this._game      = game;
+    this._paused    = false;
+    this._onRestart = options.onRestart ?? null;
+    this._onQuit    = options.onQuit    ?? null;
+    this._cursor    = 0;
+    this._rows      = this._buildRows();
+  }
+  _buildRows() {
+    const rows = [
+      { kind: 'resume', label: 'RESUME' },
+      { kind: 'volume', label: '' },
+    ];
+    if (this._onRestart) rows.push({ kind: 'restart', label: 'RESTART' });
+    if (this._onQuit)    rows.push({ kind: 'quit',    label: 'QUIT TO MENU' });
+    return rows;
+  }
+  toggle() { this._paused = !this._paused; if (!this._paused) this._cursor = 0; }
+  isPaused() { return this._paused; }
+  update(dt) {
+    if (Engine.input.wasJustPressed('Escape')) { this.toggle(); return; }
+    if (!this._paused) return;
+    const n = this._rows.length;
+    if (Engine.input.wasJustPressed('ArrowUp'))   this._cursor = (this._cursor - 1 + n) % n;
+    if (Engine.input.wasJustPressed('ArrowDown')) this._cursor = (this._cursor + 1) % n;
+    const row = this._rows[this._cursor];
+    if (row.kind === 'volume') {
+      if (Engine.input.wasJustPressed('ArrowLeft'))  Engine.audio.setVolume(+(Math.max(0, Engine.audio.getVolume() - 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('ArrowRight')) Engine.audio.setVolume(+(Math.min(1, Engine.audio.getVolume() + 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('m') || Engine.input.wasJustPressed('M')) Engine.audio.setMuted(!Engine.audio.isMuted());
+    }
+    if (Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ')) {
+      if (row.kind === 'resume') this.toggle();
+      else if (row.kind === 'restart' && this._onRestart) { this._paused = false; this._onRestart(); }
+      else if (row.kind === 'quit'    && this._onQuit)    { this._paused = false; this._onQuit(); }
+    }
+  }
+  draw(ctx) {
+    if (!this._paused) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, 0, W, H);
+    const n  = this._rows.length;
+    const pw = 420;
+    const ph = 180 + n * 50;
+    const px = W / 2 - pw / 2, py = H / 2 - ph / 2 - 16;
+    ctx.fillStyle = '#111827'; ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px monospace';
+    ctx.fillText('PAUSED', W / 2, py + 44);
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px + 20, py + 72); ctx.lineTo(px + pw - 20, py + 72); ctx.stroke();
+    const muted = Engine.audio.isMuted();
+    const vol   = Math.round(Engine.audio.getVolume() * 10);
+    const volStr = muted ? 'AUDIO  [MUTED]' : 'AUDIO  [' + '|'.repeat(vol) + ' '.repeat(10 - vol) + '] ' + vol + '/10';
+    for (let i = 0; i < n; i++) {
+      const row = this._rows[i];
+      const ry  = py + 106 + i * 50, sel = i === this._cursor;
+      if (sel) { ctx.fillStyle = 'rgba(241,196,15,0.10)'; ctx.fillRect(px + 12, ry - 20, pw - 24, 40); }
+      ctx.fillStyle = sel ? '#f1c40f' : '#9ca3af';
+      ctx.font      = sel ? 'bold 20px monospace' : '18px monospace';
+      const label = row.kind === 'volume' ? volStr : row.label;
+      ctx.fillText(label, W / 2, ry);
+    }
+    ctx.fillStyle = '#4b5563'; ctx.font = '11px monospace';
+    ctx.fillText('UP/DOWN navigate   LEFT/RIGHT volume   M mute   ESC resume', W / 2, py + ph - 16);
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+// games/minesweeper/scenes/menu.js
+// ============================================================================
+
+const MS_TOKENS = {
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 },
+  type: { small: 14, body: 18, label: 22, heading: 36, hero: 60 },
+  hit: { mouseMin: 32, touchMin: 48 },
+  colors: {
+    bg:             '#c0c0c0',
+    surface:        '#c0c0c0',
+    surfacePressed: '#a8a8a8',
+    bevelLight:     '#ffffff',
+    bevelDark:      '#808080',
+    bevelDarker:    '#404040',
+    textPrimary:    '#000000',
+    textSecondary:  '#404040',
+    accent:         '#e0001a',
+    danger:         '#cc0000',
+    success:        '#008000'
+  },
+  fontFamily: '"Courier New", "Lucida Console", monospace'
+};
+
+function msDrawRaised(ctx, x, y, w, h, depth) {
+  if (typeof depth !== 'number') depth = 3;
+  ctx.fillStyle = MS_TOKENS.colors.surface;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = MS_TOKENS.colors.bevelLight;
+  ctx.fillRect(x, y, w, depth);
+  ctx.fillRect(x, y, depth, h);
+  ctx.fillStyle = MS_TOKENS.colors.bevelDark;
+  ctx.fillRect(x, y + h - depth, w, depth);
+  ctx.fillRect(x + w - depth, y, depth, h);
+}
+function msDrawSunken(ctx, x, y, w, h, depth) {
+  if (typeof depth !== 'number') depth = 2;
+  ctx.fillStyle = MS_TOKENS.colors.surfacePressed;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = MS_TOKENS.colors.bevelDark;
+  ctx.fillRect(x, y, w, depth);
+  ctx.fillRect(x, y, depth, h);
+  ctx.fillStyle = MS_TOKENS.colors.bevelLight;
+  ctx.fillRect(x, y + h - depth, w, depth);
+  ctx.fillRect(x + w - depth, y, depth, h);
+}
+function msDrawMine(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = Math.max(1, r * 0.15);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.45, cy + Math.sin(a) * r * 0.45);
+    ctx.lineTo(cx + Math.cos(a) * r,        cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.22, cy - r * 0.22, r * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+function msDrawFlag(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(cx + r * 0.15, cy - r * 0.55, r * 0.18, r * 1.1);
+  ctx.fillRect(cx - r * 0.45, cy + r * 0.45, r * 0.95, r * 0.18);
+  ctx.fillStyle = MS_TOKENS.colors.accent;
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.15, cy - r * 0.55);
+  ctx.lineTo(cx + r * 0.15, cy - r * 0.05);
+  ctx.lineTo(cx - r * 0.55, cy - r * 0.30);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function msFormatTime(seconds) {
+  if (seconds === null || seconds === undefined) return null;
+  const s = Math.min(999, Math.max(0, Math.floor(seconds)));
+  return String(s).padStart(3, '0');
+}
+function msDrawLED(ctx, x, y, w, h, text) {
+  ctx.save();
+  ctx.fillStyle = '#1a0000';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = MS_TOKENS.colors.bevelDarker;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = MS_TOKENS.colors.accent;
+  ctx.font = `bold ${Math.floor(h * 0.72)}px ${MS_TOKENS.fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + w / 2, y + h / 2 + 1);
+  ctx.restore();
+}
+function msPreviewPattern(cols, rows) {
+  const total = cols * rows;
+  const out = new Array(total).fill('covered');
+  let r = (cols * 31 + rows * 17 + 13) | 0;
+  const next = () => { r = (r * 1103515245 + 12345) & 0x7fffffff; return r; };
+  const revealCount = Math.floor(total * 0.22);
+  const flagCount = Math.max(2, Math.floor(total * 0.04));
+  for (let i = 0; i < revealCount; i++) out[next() % total] = 'revealed';
+  for (let i = 0; i < flagCount; i++) {
+    const idx = next() % total;
+    if (out[idx] === 'covered') out[idx] = 'flag';
+  }
+  return out;
+}
+function msDrawMiniBoard(ctx, x, y, w, h, cols, rows, sample) {
+  const cellSize = Math.max(2, Math.floor(Math.min(w / cols, h / rows)));
+  const boardW = cellSize * cols;
+  const boardH = cellSize * rows;
+  const bx = x + Math.floor((w - boardW) / 2);
+  const by = y + Math.floor((h - boardH) / 2);
+  ctx.fillStyle = MS_TOKENS.colors.bevelDarker;
+  ctx.fillRect(bx - 1, by - 1, boardW + 2, boardH + 2);
+  const bevD = Math.max(1, Math.floor(cellSize / 6));
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const px = bx + cx * cellSize;
+      const py = by + cy * cellSize;
+      const cell = sample[cy * cols + cx];
+      if (cell === 'revealed') {
+        ctx.fillStyle = MS_TOKENS.colors.surfacePressed;
+        ctx.fillRect(px, py, cellSize, cellSize);
+        if (cellSize >= 5) {
+          ctx.strokeStyle = MS_TOKENS.colors.bevelDark;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+        }
+      } else if (cell === 'flag') {
+        msDrawRaised(ctx, px, py, cellSize, cellSize, bevD);
+        if (cellSize >= 6) {
+          ctx.fillStyle = MS_TOKENS.colors.accent;
+          const inset = Math.max(1, Math.floor(cellSize * 0.3));
+          ctx.fillRect(px + inset, py + inset, cellSize - inset * 2, cellSize - inset * 2);
+        }
+      } else {
+        msDrawRaised(ctx, px, py, cellSize, cellSize, bevD);
+      }
+    }
+  }
+}
+
+class MinesweeperMenuScene extends Engine.Scene {
+  constructor(game) {
+    super();
+    this._game = game;
+    this._difficulties = [
+      { key: 'beginner',     label: 'BEGINNER',     cols: 9,  rows: 9,  mines: 10, cellSize: 28 },
+      { key: 'intermediate', label: 'INTERMEDIATE', cols: 16, rows: 16, mines: 40, cellSize: 26 },
+      { key: 'expert',       label: 'EXPERT',       cols: 30, rows: 16, mines: 99, cellSize: 18 }
+    ];
+    this._selected = 0;
+    this._prevMouseLeft = false;
+    this._mouseClicked = false;
+    this._previews = this._difficulties.map(d => msPreviewPattern(d.cols, d.rows));
+    this._cardW = 240;
+    this._cardH = 340;
+    this._cardGap = MS_TOKENS.spacing.lg;
+    const totalW = this._cardW * 3 + this._cardGap * 2;
+    this._cardsX0 = Math.floor((this._game.canvas.width - totalW) / 2);
+    this._cardsY = 150;
+  }
+  enter() {
+    Engine.audio.register('ms-menu-hover',  'blipSelect');
+    Engine.audio.register('ms-menu-select', 'pickupCoin');
+  }
+  _cardRect(i) {
+    return {
+      x: this._cardsX0 + i * (this._cardW + this._cardGap),
+      y: this._cardsY,
+      w: this._cardW,
+      h: this._cardH
+    };
+  }
+  _hitTestCard(mx, my) {
+    for (let i = 0; i < 3; i++) {
+      const r = this._cardRect(i);
+      if (mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) return i;
+    }
+    return -1;
+  }
+  update(_dt) {
+    this._mouseClicked = !this._prevMouseLeft && Engine.input.mouse.left;
+    this._prevMouseLeft = Engine.input.mouse.left;
+    const hovered = this._hitTestCard(Engine.input.mouse.x, Engine.input.mouse.y);
+    if (hovered >= 0 && hovered !== this._selected) {
+      this._selected = hovered;
+      Engine.audio.play('ms-menu-hover');
+    }
+    if (Engine.input.wasJustPressed('ArrowLeft') || Engine.input.wasJustPressed('ArrowUp')) {
+      this._selected = (this._selected + 2) % 3;
+      Engine.audio.play('ms-menu-hover');
+    }
+    if (Engine.input.wasJustPressed('ArrowRight') || Engine.input.wasJustPressed('ArrowDown')) {
+      this._selected = (this._selected + 1) % 3;
+      Engine.audio.play('ms-menu-hover');
+    }
+    if (Engine.input.wasJustPressed('1')) { this._selected = 0; Engine.audio.play('ms-menu-hover'); }
+    if (Engine.input.wasJustPressed('2')) { this._selected = 1; Engine.audio.play('ms-menu-hover'); }
+    if (Engine.input.wasJustPressed('3')) { this._selected = 2; Engine.audio.play('ms-menu-hover'); }
+    const confirmedByKeyboard = Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ');
+    const confirmedByClick = this._mouseClicked && hovered >= 0;
+    if (confirmedByKeyboard || confirmedByClick) {
+      Engine.audio.play('ms-menu-select');
+      this._game.setScene(new MinesweeperMatchScene(this._game, this._difficulties[this._selected]));
+    }
+  }
+  draw(ctx) {
+    const cw = this._game.canvas.width;
+    const ch = this._game.canvas.height;
+    ctx.fillStyle = MS_TOKENS.colors.bg;
+    ctx.fillRect(0, 0, cw, ch);
+    const titleY = 70;
+    ctx.font = `bold ${MS_TOKENS.type.hero}px ${MS_TOKENS.fontFamily}`;
+    ctx.fillStyle = MS_TOKENS.colors.textPrimary;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('MINESWEEPER', cw / 2, titleY);
+    const titleHalfWidth = ctx.measureText('MINESWEEPER').width / 2;
+    msDrawMine(ctx, cw / 2 - titleHalfWidth - 56, titleY, 24);
+    msDrawFlag(ctx, cw / 2 + titleHalfWidth + 56, titleY, 24);
+    ctx.font = `${MS_TOKENS.type.body}px ${MS_TOKENS.fontFamily}`;
+    ctx.fillStyle = MS_TOKENS.colors.textSecondary;
+    ctx.fillText('Select a difficulty to begin', cw / 2, 118);
+    for (let i = 0; i < 3; i++) this._drawCard(ctx, i);
+    ctx.font = `${MS_TOKENS.type.small}px ${MS_TOKENS.fontFamily}`;
+    ctx.fillStyle = MS_TOKENS.colors.textSecondary;
+    ctx.textAlign = 'center';
+    ctx.fillText('Arrow keys or 1/2/3 to select   ENTER or click to play', cw / 2, ch - 52);
+    ctx.fillText('Best times save per difficulty', cw / 2, ch - 30);
+  }
+  _drawCard(ctx, i) {
+    const r = this._cardRect(i);
+    const d = this._difficulties[i];
+    const isSelected = i === this._selected;
+    if (isSelected) msDrawSunken(ctx, r.x, r.y, r.w, r.h, 3);
+    else msDrawRaised(ctx, r.x, r.y, r.w, r.h, 3);
+    const tx = r.x + MS_TOKENS.spacing.md;
+    const ty = r.y + MS_TOKENS.spacing.md;
+    const tw = r.w - MS_TOKENS.spacing.md * 2;
+    const th = 44;
+    msDrawSunken(ctx, tx, ty, tw, th, 2);
+    ctx.font = `bold ${MS_TOKENS.type.label}px ${MS_TOKENS.fontFamily}`;
+    ctx.fillStyle = MS_TOKENS.colors.textPrimary;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(d.label, r.x + r.w / 2, ty + th / 2 + 1);
+    const previewY = ty + th + MS_TOKENS.spacing.md;
+    const previewH = 152;
+    msDrawMiniBoard(ctx, r.x + MS_TOKENS.spacing.md, previewY, r.w - MS_TOKENS.spacing.md * 2, previewH, d.cols, d.rows, this._previews[i]);
+    const statsY = previewY + previewH + MS_TOKENS.spacing.md + 4;
+    ctx.font = `${MS_TOKENS.type.body}px ${MS_TOKENS.fontFamily}`;
+    ctx.fillStyle = MS_TOKENS.colors.textPrimary;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${d.cols} x ${d.rows}   ${d.mines} mines`, r.x + r.w / 2, statsY);
+    const best = Engine.storage.load('best_' + d.key, null);
+    const bestText = msFormatTime(best);
+    const ledW = 84;
+    const ledH = 28;
+    const ledX = r.x + Math.floor((r.w - ledW) / 2);
+    const ledY = statsY + MS_TOKENS.spacing.sm;
+    if (bestText) {
+      msDrawLED(ctx, ledX, ledY, ledW, ledH, bestText);
+      ctx.font = `${MS_TOKENS.type.small}px ${MS_TOKENS.fontFamily}`;
+      ctx.fillStyle = MS_TOKENS.colors.textSecondary;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText('BEST', r.x + r.w / 2, ledY + ledH + 14);
+    } else {
+      ctx.font = `${MS_TOKENS.type.small}px ${MS_TOKENS.fontFamily}`;
+      ctx.fillStyle = MS_TOKENS.colors.textSecondary;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('no best time yet', r.x + r.w / 2, ledY + ledH / 2);
+    }
+  }
+}
+
+// ============================================================================
+// games/minesweeper/scenes/match.js
+// ============================================================================
+
+class MinesweeperMatchScene extends Engine.Scene {
+  constructor(game, difficulty) {
+    super();
+    this._game       = game;
+    this._difficulty = difficulty;
+    this._cols       = difficulty.cols;
+    this._rows       = difficulty.rows;
+    this._mineCount  = difficulty.mines;
+    this._cellSize   = difficulty.cellSize;
+    const boardW = this._cols * this._cellSize;
+    const boardH = this._rows * this._cellSize;
+    this._boardW = boardW;
+    this._boardH = boardH;
+    this._boardX = Math.floor((this._game.canvas.width - boardW) / 2);
+    this._boardY = 110;
+    this._pause = new PauseOverlay(this._game, {
+      onRestart: () => this._game.setScene(new MinesweeperMatchScene(this._game, this._difficulty)),
+      onQuit:    () => this._game.setScene(new MinesweeperMenuScene(this._game)),
+    });
+    this._prevMouseLeft  = false;
+    this._prevMouseRight = false;
+    this._reset();
+  }
+  enter() {
+    Engine.audio.register('mw-click', 'blipSelect');
+    Engine.audio.register('mw-flag',  'pickupCoin');
+    Engine.audio.register('mw-boom',  'explosion');
+    Engine.audio.register('mw-win',   'powerUp');
+  }
+  _reset() {
+    this._mines        = new Set();
+    this._revealed     = new Set();
+    this._flagged      = new Set();
+    this._minesPlaced  = false;
+    this._over         = false;
+    this._won          = false;
+    this._explodedIdx  = -1;
+    this._startTime    = 0;
+    this._elapsed      = 0;
+    this._neighborCache = null;
+    this._newRecord    = false;
+  }
+  _idx(c, r) { return r * this._cols + c; }
+  _ofIdx(i)  { return [i % this._cols, Math.floor(i / this._cols)]; }
+  _placeMines(safeIdx) {
+    const [sc, sr] = this._ofIdx(safeIdx);
+    const safe = new Set([safeIdx]);
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      const c = sc + dc, r = sr + dr;
+      if (c >= 0 && c < this._cols && r >= 0 && r < this._rows) safe.add(this._idx(c, r));
+    }
+    const total = this._cols * this._rows;
+    const pool = [];
+    for (let i = 0; i < total; i++) if (!safe.has(i)) pool.push(i);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    const need = Math.min(this._mineCount, pool.length);
+    for (let i = 0; i < need; i++) this._mines.add(pool[i]);
+    this._minesPlaced = true;
+    this._startTime = performance.now();
+    this._neighborCache = new Int8Array(total);
+    for (let r = 0; r < this._rows; r++) {
+      for (let c = 0; c < this._cols; c++) {
+        const idx = this._idx(c, r);
+        if (this._mines.has(idx)) { this._neighborCache[idx] = -1; continue; }
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nc = c + dc, nr = r + dr;
+          if (nc < 0 || nc >= this._cols || nr < 0 || nr >= this._rows) continue;
+          if (this._mines.has(this._idx(nc, nr))) n++;
+        }
+        this._neighborCache[idx] = n;
+      }
+    }
+  }
+  _neighborMines(c, r) { return this._neighborCache[this._idx(c, r)]; }
+  _reveal(c, r) {
+    const startIdx = this._idx(c, r);
+    if (this._revealed.has(startIdx) || this._flagged.has(startIdx)) return;
+    if (this._mines.has(startIdx)) {
+      this._revealed.add(startIdx);
+      this._explodedIdx = startIdx;
+      this._over = true;
+      this._won = false;
+      for (const m of this._mines) this._revealed.add(m);
+      Engine.audio.play('mw-boom');
+      return;
+    }
+    const stack = [[c, r]];
+    while (stack.length) {
+      const [cc, cr] = stack.pop();
+      const ii = this._idx(cc, cr);
+      if (this._revealed.has(ii) || this._flagged.has(ii)) continue;
+      if (this._mines.has(ii)) continue;
+      this._revealed.add(ii);
+      if (this._neighborMines(cc, cr) === 0) {
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nc = cc + dc, nr = cr + dr;
+          if (nc < 0 || nc >= this._cols || nr < 0 || nr >= this._rows) continue;
+          stack.push([nc, nr]);
+        }
+      }
+    }
+    Engine.audio.play('mw-click');
+    this._checkWin();
+  }
+  _checkWin() {
+    if (this._over) return;
+    const total = this._cols * this._rows;
+    if (this._revealed.size === total - this._mineCount) {
+      this._won = true;
+      this._over = true;
+      Engine.audio.play('mw-win');
+      for (const m of this._mines) this._flagged.add(m);
+      const t = this._elapsed;
+      const key = 'best_' + this._difficulty.key;
+      const best = Engine.storage.load(key, null);
+      if (best === null || t < best) {
+        Engine.storage.save(key, +t.toFixed(3));
+        this._newRecord = true;
+      }
+    }
+  }
+  _toggleFlag(c, r) {
+    const i = this._idx(c, r);
+    if (this._revealed.has(i)) return;
+    if (this._flagged.has(i)) this._flagged.delete(i); else this._flagged.add(i);
+    Engine.audio.play('mw-flag');
+  }
+  _chord(c, r) {
+    const i = this._idx(c, r);
+    if (!this._revealed.has(i)) return;
+    const n = this._neighborMines(c, r);
+    if (n <= 0) return;
+    let flagsAround = 0;
+    const targets = [];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nc >= this._cols || nr < 0 || nr >= this._rows) continue;
+      const ni = this._idx(nc, nr);
+      if (this._flagged.has(ni))           flagsAround++;
+      else if (!this._revealed.has(ni))    targets.push([nc, nr]);
+    }
+    if (flagsAround === n) {
+      for (const [tc, tr] of targets) {
+        this._reveal(tc, tr);
+        if (this._over) return;
+      }
+    }
+  }
+  _cellAt(mx, my) {
+    const c = Math.floor((mx - this._boardX) / this._cellSize);
+    const r = Math.floor((my - this._boardY) / this._cellSize);
+    if (c < 0 || c >= this._cols || r < 0 || r >= this._rows) return null;
+    return [c, r];
+  }
+  _faceRect() {
+    const W = this._game.canvas.width;
+    const size = 44;
+    return { x: W / 2 - size / 2, y: 36, w: size, h: size };
+  }
+  _pointInRect(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  }
+  update(dt) {
+    const mouseClicked      = !this._prevMouseLeft  && Engine.input.mouse.left;
+    const mouseRightClicked = !this._prevMouseRight && Engine.input.mouse.right;
+    this._prevMouseLeft  = Engine.input.mouse.left;
+    this._prevMouseRight = Engine.input.mouse.right;
+    this._pause.update(dt);
+    if (this._pause.isPaused()) return;
+    if (Engine.input.wasJustPressed('r') || Engine.input.wasJustPressed('R')) { this._reset(); return; }
+    if (!this._over && this._minesPlaced) {
+      this._elapsed = (performance.now() - this._startTime) / 1000;
+    }
+    const mx = Engine.input.mouse.x, my = Engine.input.mouse.y;
+    if (mouseClicked && this._pointInRect(mx, my, this._faceRect())) { this._reset(); return; }
+    if (this._over) return;
+    if (mouseClicked) {
+      const cell = this._cellAt(mx, my);
+      if (cell) {
+        const [c, r] = cell;
+        const i = this._idx(c, r);
+        if (!this._minesPlaced) this._placeMines(i);
+        if (this._flagged.has(i)) {
+        } else if (this._revealed.has(i)) {
+          this._chord(c, r);
+        } else {
+          this._reveal(c, r);
+        }
+      }
+    }
+    if (mouseRightClicked) {
+      const cell = this._cellAt(mx, my);
+      if (cell) {
+        const [c, r] = cell;
+        this._toggleFlag(c, r);
+      }
+    }
+  }
+  draw(ctx) {
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+    ctx.fillStyle = '#bdbdbd';
+    ctx.fillRect(0, 0, W, H);
+    const hudY = 24, hudH = 60, hudPad = 24;
+    this._drawSunken(ctx, hudPad, hudY, W - hudPad * 2, hudH);
+    const minesLeft = Math.max(0, this._mineCount - this._flagged.size);
+    this._drawDigitDisplay(ctx, hudPad + 16, hudY + 12, 3, minesLeft);
+    const time = Math.min(999, Math.floor(this._elapsed));
+    this._drawDigitDisplay(ctx, W - hudPad - 16 - 3 * 26, hudY + 12, 3, time);
+    this._drawFace(ctx);
+    this._drawSunken(ctx, this._boardX - 4, this._boardY - 4, this._boardW + 8, this._boardH + 8);
+    for (let r = 0; r < this._rows; r++) {
+      for (let c = 0; c < this._cols; c++) {
+        this._drawCell(ctx, c, r);
+      }
+    }
+    if (this._over) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const bannerY = this._boardY + this._boardH + 28;
+      ctx.fillStyle = this._won ? '#1b5e20' : '#b71c1c';
+      ctx.font = 'bold 26px monospace';
+      ctx.fillText(this._won ? 'CLEARED' : 'BOOM', W / 2, bannerY);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.font = '16px monospace';
+      const detail = this._elapsed.toFixed(2) + 's' + (this._newRecord ? '   NEW RECORD' : '');
+      ctx.fillText(detail, W / 2, bannerY + 26);
+      ctx.fillStyle = '#444';
+      ctx.font = '13px monospace';
+      ctx.fillText('Click face or press R to play again', W / 2, bannerY + 46);
+    }
+    this._pause.draw(ctx);
+    ctx.restore();
+  }
+  _drawSunken(ctx, x, y, w, h) {
+    ctx.fillStyle = '#bdbdbd';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#7b7b7b';
+    ctx.fillRect(x, y, w, 2);
+    ctx.fillRect(x, y, 2, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y + h - 2, w, 2);
+    ctx.fillRect(x + w - 2, y, 2, h);
+  }
+  _drawRaised(ctx, x, y, w, h) {
+    ctx.fillStyle = '#bdbdbd';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, 3);
+    ctx.fillRect(x, y, 3, h);
+    ctx.fillStyle = '#7b7b7b';
+    ctx.fillRect(x, y + h - 3, w, 3);
+    ctx.fillRect(x + w - 3, y, 3, h);
+  }
+  _drawDigitDisplay(ctx, x, y, count, value) {
+    const dw = 24, dh = 36, gap = 2;
+    const totalW = count * dw + (count - 1) * gap + 6;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x - 3, y - 3, totalW, dh + 6);
+    const str = String(Math.max(0, value)).padStart(count, '0').slice(-count);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold ' + (dh - 4) + 'px monospace';
+    for (let i = 0; i < count; i++) {
+      const cx = x + i * (dw + gap) + dw / 2;
+      const cy = y + dh / 2;
+      ctx.fillStyle = '#400000';
+      ctx.fillText('8', cx, cy + 1);
+      ctx.fillStyle = '#ff2a2a';
+      ctx.fillText(str[i], cx, cy + 1);
+    }
+  }
+  _drawFace(ctx) {
+    const f = this._faceRect();
+    this._drawRaised(ctx, f.x, f.y, f.w, f.h);
+    const cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+    const r = f.w / 2 - 6;
+    ctx.fillStyle = '#ffeb3b';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = '#000'; ctx.fillStyle = '#000';
+    if (this._over && !this._won) {
+      ctx.beginPath();
+      ctx.moveTo(cx - 6, cy - 5); ctx.lineTo(cx - 2, cy - 1);
+      ctx.moveTo(cx - 2, cy - 5); ctx.lineTo(cx - 6, cy - 1);
+      ctx.moveTo(cx + 2, cy - 5); ctx.lineTo(cx + 6, cy - 1);
+      ctx.moveTo(cx + 6, cy - 5); ctx.lineTo(cx + 2, cy - 1);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy + 6, 4, Math.PI, 0); ctx.stroke();
+    } else if (this._over && this._won) {
+      ctx.fillRect(cx - 9, cy - 5, 6, 4);
+      ctx.fillRect(cx + 3, cy - 5, 6, 4);
+      ctx.fillRect(cx - 9, cy - 6, 18, 2);
+      ctx.beginPath(); ctx.arc(cx, cy + 4, 4, 0, Math.PI); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(cx - 4, cy - 2, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + 4, cy - 2, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy + 3, 4, 0, Math.PI); ctx.stroke();
+    }
+  }
+  _drawCell(ctx, c, r) {
+    const i = this._idx(c, r);
+    const x = this._boardX + c * this._cellSize;
+    const y = this._boardY + r * this._cellSize;
+    const s = this._cellSize;
+    const revealed = this._revealed.has(i);
+    const flagged  = this._flagged.has(i);
+    const mine     = this._mines.has(i);
+    if (revealed) {
+      ctx.fillStyle = (mine && i === this._explodedIdx) ? '#ff4444' : '#c0c0c0';
+      ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = '#7b7b7b';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+      if (mine) this._drawMine(ctx, x, y, s);
+      else {
+        const n = this._neighborMines(c, r);
+        if (n > 0) this._drawNumber(ctx, x, y, s, n);
+      }
+    } else {
+      this._drawRaised(ctx, x, y, s, s);
+      if (flagged) {
+        this._drawFlag(ctx, x, y, s);
+        if (this._over && !this._won && !mine) {
+          ctx.strokeStyle = '#c62828'; ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 4, y + 4);     ctx.lineTo(x + s - 4, y + s - 4);
+          ctx.moveTo(x + s - 4, y + 4); ctx.lineTo(x + 4, y + s - 4);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+  _drawNumber(ctx, x, y, s, n) {
+    const colors = [null, '#0000ff', '#008000', '#ff0000', '#000080', '#800000', '#008080', '#000000', '#808080'];
+    ctx.fillStyle = colors[n] || '#000';
+    ctx.font = 'bold ' + Math.floor(s * 0.7) + 'px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), x + s / 2, y + s / 2 + 1);
+  }
+  _drawMine(ctx, x, y, s) {
+    const cx = x + s / 2, cy = y + s / 2;
+    const r = s * 0.28;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(1, s * 0.06);
+    const sp = r * 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - sp, cy);                ctx.lineTo(cx + sp, cy);
+    ctx.moveTo(cx, cy - sp);                ctx.lineTo(cx, cy + sp);
+    ctx.moveTo(cx - sp * 0.7, cy - sp * 0.7); ctx.lineTo(cx + sp * 0.7, cy + sp * 0.7);
+    ctx.moveTo(cx + sp * 0.7, cy - sp * 0.7); ctx.lineTo(cx - sp * 0.7, cy + sp * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.25, 0, Math.PI * 2); ctx.fill();
+  }
+  _drawFlag(ctx, x, y, s) {
+    const px = x + s * 0.5;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(px - 1, y + s * 0.28, 2, s * 0.5);
+    ctx.fillRect(x + s * 0.25, y + s * 0.78, s * 0.5, 3);
+    ctx.fillRect(x + s * 0.32, y + s * 0.72, s * 0.36, 3);
+    ctx.fillStyle = '#c62828';
+    ctx.beginPath();
+    ctx.moveTo(px - 1, y + s * 0.28);
+    ctx.lineTo(x + s * 0.22, y + s * 0.45);
+    ctx.lineTo(px - 1, y + s * 0.58);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// ============================================================================
+// bootstrap
+// ============================================================================
+
+(function () {
+  const canvas = document.getElementById('game');
+  const presets = { regular: { w: 900, h: 600 } };
+  const preset = presets.regular;
+  canvas.width  = preset.w;
+  canvas.height = preset.h;
+  function fitToViewport() {
+    const s = Math.min(window.innerWidth / preset.w, window.innerHeight / preset.h);
+    canvas.style.width  = (preset.w * s) + 'px';
+    canvas.style.height = (preset.h * s) + 'px';
+  }
+  fitToViewport();
+  window.addEventListener('resize', fitToViewport);
+  canvas.oncontextmenu = function (e) { e.preventDefault(); };
+  const game = new Engine.Game(canvas, { gameName: 'minesweeper' });
+  game.setScene(new MinesweeperMenuScene(game));
+  game.start();
+})();
+</script>
+</body>
+</html>
