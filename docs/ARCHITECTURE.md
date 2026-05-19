@@ -127,6 +127,8 @@ Key identifiers follow the standard `KeyboardEvent.key` values (`'ArrowLeft'`, `
 
 Internal: attaches DOM event listeners (`keydown`, `keyup`, `mousemove`, `mousedown`, `mouseup`) at construction. The constructor accepts an optional canvas element so mouse coordinates are computed relative to it. Instantiated by Game and assigned to `Engine.input`.
 
+Mouse coordinate mapping: when constructed with a canvas, the Input module uses `getBoundingClientRect()` to convert physical click positions (CSS pixels) to logical canvas pixels (`canvas.width`/`canvas.height`). This means CSS-scaled canvases (per the logical-canvas convention in the following section) report mouse coordinates in logical-canvas space, not physical-viewport space. Scene code does not need to apply its own scale correction.
+
 ### Audio (global)
 
 Responsibilities: register and play procedural sound effects defined as JSON parameter objects. Wraps the vendored jsfxr library (`engine/lib/sfxr.js` and `engine/lib/riffwave.js`).
@@ -198,6 +200,45 @@ Scripts that draw treat (0, 0) as the host GameObject's position. A `Renderer` s
 
 Canvas default: origin at top-left of the canvas, X increasing right, Y increasing down. See ADR-0008 for trade-off rationale. Trigonometry that assumes Y-up requires a sign flip on Y components.
 
+## Logical canvas and viewport bootstrap
+
+Per ADR-0017, games declare one or more logical canvas resolutions and use a viewport-aware bootstrap to set the physical canvas to the logical size while CSS scales the element to fit the user's viewport. The engine itself is agnostic to physical pixel dimensions; it reads `canvas.width` and `canvas.height` at draw time, so all the responsive logic lives in each game's bootstrap snippet, not in the Game class.
+
+Convention. A game declares its presets as named entries: `regular` for landscape (target aspect roughly 3:2, default 900x600), and optionally `compact` for portrait (target aspect roughly 3:5, default 540x900). The bootstrap inspects `window.innerWidth` and `window.innerHeight`, picks the preset whose aspect ratio is closer to the viewport's, sets `canvas.width` and `canvas.height` to the chosen preset, and computes a CSS scale that fits the element to the viewport while preserving aspect ratio.
+
+Reference bootstrap snippet (a game with both presets defined):
+
+```js
+const presets = {
+  regular: { w: 900, h: 600 },
+  compact: { w: 540, h: 900 }
+};
+function pickPreset() {
+  if (!presets.compact) return presets.regular;
+  const va = window.innerWidth / window.innerHeight;
+  const ra = presets.regular.w / presets.regular.h;
+  const ca = presets.compact.w / presets.compact.h;
+  return Math.abs(Math.log(va / ca)) < Math.abs(Math.log(va / ra))
+    ? presets.compact : presets.regular;
+}
+const preset = pickPreset();
+canvas.width  = preset.w;
+canvas.height = preset.h;
+function fitToViewport() {
+  const s = Math.min(window.innerWidth / preset.w, window.innerHeight / preset.h);
+  canvas.style.width  = (preset.w * s) + 'px';
+  canvas.style.height = (preset.h * s) + 'px';
+}
+fitToViewport();
+window.addEventListener('resize', fitToViewport);
+```
+
+Games that support only landscape may omit the `compact` preset and let the regular preset letterbox on portrait viewports. The trade-off is documented per game. Minesweeper omits compact because right-click flagging is mouse-only and a touch-input mapping has not been defined.
+
+Mouse coordinates: `engine/input.js` uses `getBoundingClientRect()` to map physical click positions to logical canvas pixels (see the Input class contract), so scene code reads logical-space coordinates regardless of the CSS scale factor. No engine change is required to support the responsive bootstrap.
+
+Touch detection: the bootstrap may also detect touch capability via `('ontouchstart' in window) || navigator.maxTouchPoints > 0` and surface that to scenes so they can enlarge hit-target minimums (see design tokens in ADR-0017). Actual touch-to-pointer event mapping is out of scope for ADR-0017 and remains deferred.
+
 ## Signal naming convention
 
 Signals are lowercase, snake_case. Use past-tense verbs for events that have happened, present-tense or noun phrases for state changes:
@@ -248,7 +289,7 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
 11. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, and `Engine.storage`.
 12. Scenes (after the scripts they reference).
-13. A small bootstrap snippet that gets the canvas element, instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+13. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 
 Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016) inlines steps 1 through 10 in the canonical order. A build that uses the bundle replaces steps 1 through 10 with a single inline of the bundle file followed by steps 11 through 13. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; per CLAUDE.md §8, any commit that changes an engine module must regenerate the bundle in the same commit.
 
@@ -261,4 +302,5 @@ Not in scope for the initial engine version, to be designed with an ADR when nee
 - File-backed audio playback (mp3/ogg/wav). Will live in `scripts/audio-player.js` wrapping Howler.js. Distinct from `Engine.audio`, which handles procedural SFX. See ADR-0011.
 - Frame-rate-independent physics. Current dt-based motion is naive and acceptable for early POCs.
 - Spatial partitioning for collision. The current O(N²) pairwise pass is fine up to ~20 colliders. See ADR-0010.
+- Touch input mapping. Hit-target sizing in the visual language anticipates touch (ADR-0017), but actual touch-to-pointer event handling in `engine/input.js` is deferred until a game requires it.
 - Networking and multiplayer. See `docs/resources/multiplayer.md`.
