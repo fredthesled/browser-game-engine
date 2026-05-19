@@ -4,7 +4,7 @@ Last updated: 2026-05-14
 
 ## Current status
 
-Six games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), Horses Teach Typing v1 (sources and build committed, visual verification pending), Party House (sources committed, build pending manual upload, visual verification pending), and Minesweeper (sources committed, build pending manual upload, visual verification pending). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), and bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2) are settled.
+Six games in the repo: Pong, Survivors v3, Clown Brawler (v1 in repo; v2 committed, visual verification pending), Horses Teach Typing v1 (sources and build committed, visual verification pending), Party House (sources committed, build pending manual upload, visual verification pending), and Minesweeper (sources committed including a polished menu pass per ADR-0017, build pending re-assembly and manual upload). Plus `poc-square` as an engine smoke test, with a v2 sibling build (`build/poc-square-v2.html`) verified to behave identically to v1, validating the engine-bundle workflow as a drop-in for individual-module concatenation. The engine, audio service, collision contract, pause utility (now with optional onRestart in addition to onQuit), persistent storage, procedural Shape DSL sprite primitive (`ShapeSprite`), canonical engine bundle (`engine/engine.bundle.js`, per ADR-0016), bundle-inlining build-assembly convention (`docs/CONVENTIONS.md`, validated against poc-square v1/v2), and visual language plus logical-canvas convention (ADR-0017) are settled.
 
 Per ADR-0013, games in the repo are experimental probes rather than shipping products. Per the sibling-iteration convention (CONVENTIONS.md), iterations get versioned build artifacts.
 
@@ -12,41 +12,39 @@ A dead-file convention is in effect, defined in `docs/DEAD_FILES.md`.
 
 ## What was done in the most recent session
 
-**Session 2026-05-14 (latest, Minesweeper):**
+**Session 2026-05-14 (later, visual language and Minesweeper menu polish):**
+
+1. **ADR-0017 visual language and responsive layout** (commit f77713d3). New ADR appended to `docs/DECISIONS.md`. Establishes a project-wide visual language via design tokens (spacing, typography, hit targets, and color roles), a logical-canvas convention for viewport-aware bootstrap (each game declares a `regular` landscape preset and optionally a `compact` portrait preset; the bootstrap picks based on viewport aspect and CSS-scales to fit), touch capability detection (without yet implementing touch input mapping), and per-game theming via token overrides. UI primitive Scripts (button, panel, label) deferred until a second game wants the same vocabulary. The Game constructor is unchanged; the responsive convention lives in the per-game bootstrap snippet, not in engine code.
+
+2. **ARCHITECTURE.md updated** (commit 625e6a0e). New "Logical canvas and viewport bootstrap" section documenting the convention and reference bootstrap snippet. The Input class contract section gained a paragraph noting that `getBoundingClientRect()` maps physical click positions to logical canvas pixels, so CSS-scaled canvases report correct mouse coordinates without per-scene scale correction. Build concatenation order step 13 now points to the new section. Open questions list now includes "Touch input mapping" as an explicit deferred item.
+
+3. **Minesweeper menu polished as first proving ground.** New `games/minesweeper/scenes/menu.js` replaces the prior text-based difficulty list with three preview cards in a row. Each card shows a mini board render at the correct aspect ratio per difficulty (9x9 with 16px cells for Beginner, 16x16 with 9px cells for Intermediate, 30x16 with 6px cells for Expert), an inset sunken title plate, dimensions plus mine count, and a LED-style best-time readout when one is stored. Raised bevel for unselected cards, sunken bevel for the selected card, matching the Win 3.1 vocabulary used in-game. Tokens are defined inline at the top of the menu file (as the `MS_TOKENS` const) per ADR-0017's deferred-extraction policy. Input: arrow keys, 1/2/3, or mouse hover to select; Enter/Space/click to confirm.
+
+4. **`scenes/_registry.md` updated.** MinesweeperMenuScene row rewritten to describe the preview-card layout and to reference ADR-0017 as the source of the visual language pattern.
+
+5. **Build re-assembly pending.** The polished menu plus the new viewport-aware bootstrap require regenerating `build/minesweeper.html`. The bootstrap should declare `presets = { regular: { w: 900, h: 600 } }` (no `compact` preset, because right-click flagging is mouse-only and a touch-to-pointer mapping has not been defined), set `canvas.width`/`canvas.height` to the regular preset, and compute a CSS scale via a `fitToViewport()` helper to fit the canvas to the viewport while preserving aspect ratio (re-fitting on `resize`). Build assembly is deferred to the next session given the reduced tool surface mid-session (no local bash, file system, or `present_files` available for assembly + delivery).
+
+**Session 2026-05-14 (earlier, Minesweeper):**
 
 1. **New game: Minesweeper.** Classic Win 3.1 Minesweeper with three difficulties: Beginner (9x9, 10 mines), Intermediate (16x16, 40 mines), Expert (30x16, 99 mines). Cell size scales per difficulty (28px Beginner, 26px Intermediate, 18px Expert) so all three boards fit comfortably inside the 900x600 canvas. Standard rules: left click reveals, right click flags, chord click on a satisfied number reveals adjacent unflagged cells. First click is always safe -- mines are placed lazily on the first reveal, excluding both the clicked cell and its 3x3 neighborhood, which guarantees the first click clears at least nine cells.
 
 2. **Save state.** Best times persisted per difficulty via `Engine.storage` under keys `best_beginner`, `best_intermediate`, `best_expert`, each storing a number of seconds (smaller is better). The menu displays the current best for the selected difficulty. New-record callout on the win screen. Game name passed to the Game constructor is `'minesweeper'` so storage keys are namespaced as `minesweeper:best_<key>`.
 
 3. **Two new scenes** under `games/minesweeper/scenes/`:
-   - `MinesweeperMenuScene` (`menu.js`). Title, difficulty select (Up/Down or 1/2/3, or mouse hover + click), best-time panel rendering only when a record exists for the selected difficulty. ENTER or click on the highlighted option transitions to match.
+   - `MinesweeperMenuScene` (`menu.js`). Title, difficulty select (Up/Down or 1/2/3, or mouse hover + click), best-time panel rendering only when a record exists for the selected difficulty. ENTER or click on the highlighted option transitions to match. Superseded later this same day by the polish pass; see the session entry above.
    - `MinesweeperMatchScene` (`match.js`). All gameplay including board state, lazy mine placement with first-click safety, iterative flood-fill, chord click, timer, mine counter, smiley face restart, win/loss end states with mine-reveal animation, and PauseOverlay integration. No GameObjects: state is scene-level since the game is intrinsically discrete and turn-based, following the Party House pattern. PauseOverlay wired with both `onRestart` (re-enters the match scene with the same difficulty) and `onQuit` (back to menu).
 
 4. **No new scripts.** Minesweeper does not need GameObject-attached behaviors; the board is scene-level state. Reuses the existing PauseOverlay utility.
 
 5. **Mouse-edge-before-pause convention followed.** Mouse just-pressed detection is computed before the PauseOverlay early-return, so clicks made while paused are consumed on their own frame and do not fire as phantom clicks on resume (per the PHMatchScene reference established in the prior session).
 
-6. **Build pending manual upload.** The assembled `build/minesweeper.html` is ~76KB (engine bundle 46KB + pause-overlay 5KB + menu 6KB + match 18KB + bootstrap/HTML wrapper ~1KB). Per the large-payload safety rule, this exceeds the comfortable single-file API push threshold, so the source files were pushed and the build is delivered to Trevor for manual upload.
+6. **Build pending manual upload.** The original assembled `build/minesweeper.html` was ~76KB (engine bundle 46KB + pause-overlay 5KB + menu 6KB + match 18KB + bootstrap/HTML wrapper ~1KB). Per the large-payload safety rule, this exceeded the comfortable single-file API push threshold, so the source files were pushed and the build was delivered to Trevor for manual upload. Subsequent polish pass (session above) requires a new build to be assembled.
 
-7. **Registries updated.** `scenes/_registry.md` has new rows for MinesweeperMenuScene and MinesweeperMatchScene. No new entries needed in `scripts/_registry.md` since the game uses only the existing PauseOverlay utility.
+7. **Registries updated.** `scenes/_registry.md` got new rows for MinesweeperMenuScene and MinesweeperMatchScene. No new entries needed in `scripts/_registry.md` since the game uses only the existing PauseOverlay utility.
 
 **Session 2026-05-13 (Party House):**
 
-1. **New game: Party House.** Single-scenario MVP study of UFO 50 #25 ("Party House" -- note the original title is *Party House*, not the colloquial transposition "House Party"). Deckbuilder where guests are cards in a rolodex; each day you throw a party, guests enter one at a time, generate popularity/cash/trouble, and the goal is four star guests at one successful party within 25 days. Trouble cap of 3 triggers a cop shutdown (no rewards). After a shutdown the player picks one guest type to ban from the next party (one rolodex instance is skipped for one party then returns). Nine guest types in this scope: three free starters (Old Friend, Wild Buddy, Rich Pal) and six shop guests (Cute Dog and Hippie for trouble removal, Auctioneer for Old-Friend-synergy cash, Rock Star for high pop with trouble, Celebrity and Dragon as the two star guests). Five starting house slots, expansion cost starts at $2 and scales by +1 per expansion to a max of $12.
-
-2. **Save state.** Persistent high-score record via `Engine.storage` under key `'best'` with shape `{ fewestDays: number|null, totalWins: number }`. `fewestDays` is updated only when the new run clears in fewer days than the prior best (or there is no prior best). `totalWins` increments on every successful clear. Displayed on the menu scene; new-record callout on the win screen. Game name passed to the Game constructor is `'party-house'` so the storage key is namespaced as `party-house:best`.
-
-3. **Two new scenes** under `games/party-house/scenes/`:
-   - `PHMenuScene` (`menu.js`). Title with pictographic house silhouette, flickering window light, animated music notes, drifting guest silhouettes at the bottom. Best-record panel renders only when a record exists.
-   - `PHMatchScene` (`match.js`). All gameplay lives here including the phase state machine, party simulation, shop UI, ban screen, win/lose end overlays, and PauseOverlay integration. No GameObjects: rendering is direct canvas calls per phase, since the game state is intrinsically discrete and turn-based. PauseOverlay wired with both `onRestart` (re-enters the match scene) and `onQuit` (back to menu).
-
-4. **No new scripts.** Party House does not need GameObject-attached behaviors -- the game state is scene-level. Compare to action games (Survivors, Clown Brawler) where many entities run per-frame logic.
-
-5. **Mouse-edge fix during pause.** Mouse "just-pressed" detection is now recomputed every frame including during pause, so a click made while paused is consumed on its own frame rather than firing as a phantom click on resume. This pattern should propagate to any future scene that mixes mouse input with PauseOverlay (Pong's eventual PauseOverlay retrofit, etc.).
-
-6. **Build pending manual upload.** The assembled `build/party-house.html` is ~85KB (engine bundle 46KB + pause-overlay 5KB + menu 5KB + match 30KB + bootstrap/HTML wrapper ~1KB). Per the large-payload safety rule, this exceeds the single-file API push threshold, so the source files were pushed and the build is delivered to Trevor for manual upload.
-
-7. **Registries updated.** `scenes/_registry.md` has new rows for PHMenuScene and PHMatchScene. No new entries needed in `scripts/_registry.md` since the game uses only the existing PauseOverlay utility.
+See prior STATE.md revisions for the full Party House session detail. Summary: new game v1 (single-scenario UFO 50 #25 study, 9 guest types, 25-day clock, trouble shutdown mechanic, ban-by-type, persistent best-record), `PHMenuScene` and `PHMatchScene`, no new scripts, mouse-edge-during-pause fix introduced.
 
 **Session 2026-05-13 (earlier, engine bundle work, verification, and convention codification):**
 
@@ -65,21 +63,23 @@ See prior STATE entries: engine (signal-bus, input, script, game-object, scene, 
 1. **Visual verification of `build/clown-brawler-v2.html`** (from 2026-05-12). Build is in repo; needs browser load to confirm.
 2. **Visual verification of `build/horses-teach-typing.html`** (from 2026-05-13 earlier). Build is in repo; needs browser load to confirm.
 3. **Visual verification of `build/party-house.html`** (from 2026-05-13 latest). Build assembled locally and delivered to Trevor for manual upload; needs upload then browser load to confirm.
-4. **Visual verification of `build/minesweeper.html`** (from 2026-05-14). Build assembled locally and delivered to Trevor for manual upload; needs upload then browser load to confirm.
+4. **Re-assembly and visual verification of `build/minesweeper.html`** (per the 2026-05-14 later session). Original build was assembled and delivered after the Minesweeper game session; the same-day polish pass (new menu + viewport-aware bootstrap per ADR-0017) requires a new build to be assembled and re-uploaded. Sources are committed in the repo; assembly is the remaining step.
 
 ## Next up
 
-1. **(In progress)** Visual verification of the four pending builds above.
+1. **(In progress)** Visual verification of the four pending builds above, including the Minesweeper re-build.
 
-2. **Minesweeper v2 candidates** (post-verification): question-mark cell state (third right-click cycle, between flag and clear), keyboard navigation (arrow keys move a cursor, space reveal, F flag) for accessibility, custom difficulty input screen, win-streak/loss-streak persistence in addition to best times, optional safe-corner-start variant where the top-left cell is also forced safe.
+2. **Visual-language follow-up.** Per ADR-0017, the tokens defined inline in `games/minesweeper/scenes/menu.js` should be extracted to a shared `scripts/ui-tokens.js` once a second game wants the same vocabulary. UI primitive Scripts (`UiButton`, `UiPanel`, `UiLabel`) become candidates at the same point. Until then, new menus that want the visual language copy the `MS_TOKENS` constant pattern (renamed) and use the same `drawRaised` / `drawSunken` helpers. The `scenes-preview.html` harness flagged for a future session should render scenes at both `regular` and `compact` logical resolutions to exercise the responsive bootstrap convention.
 
-3. **Party House v2 candidates** (post-verification): hover tooltips on guest cards with full ability description, party-flow animation (guests slide in rather than appear), end-of-day balance sheet (cumulative pop/cash earned), a "view rolodex" toggle on the shop screen, second scenario unlocked after first clear, randomization of starting rolodex shuffle visible to player.
+3. **Minesweeper v2 candidates** (post-verification): question-mark cell state (third right-click cycle, between flag and clear), keyboard navigation (arrow keys move a cursor, space reveal, F flag) for accessibility, custom difficulty input screen, win-streak/loss-streak persistence in addition to best times, optional safe-corner-start variant where the top-left cell is also forced safe.
 
-4. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
+4. **Party House v2 candidates** (post-verification): hover tooltips on guest cards with full ability description, party-flow animation (guests slide in rather than appear), end-of-day balance sheet (cumulative pop/cash earned), a "view rolodex" toggle on the shop screen, second scenario unlocked after first clear, randomization of starting rolodex shuffle visible to player.
 
-5. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+5. **Horses Teach Typing v2 candidates** (post-verification): horse keyboard-hint speech bubble showing finger placement for the next letter, BPM progression as score climbs, high-score persistence via `Engine.storage`, optional metronome tick SFX on each beat for a stronger rhythm anchor.
 
-6. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
+6. **Revisit Konva-style raster sprite path** (user-flagged on 2026-05-12). Carrying over from prior session. Not actionable until v2 of Clown Brawler is verified and asset sourcing is decided.
+
+7. **Engine primitives.** Common attachable behaviors reinvented across multiple games:
    - **Conductor primitive.** The clock/spawn-cursor pattern in HTTMatchScene is similar to the wave-spawn pattern in SurvivorsMatchScene. A shared `Conductor` or `Scheduler` script could host beat-locked or interval-locked event scheduling.
    - **Real spawner script.** Replaces inlined spawn logic in `SurvivorsMatchScene._spawnEnemy`.
    - **Signal-driven animation player.** Decouples animation state changes from per-script update logic.
@@ -105,7 +105,7 @@ Real items, blocked behind ADR-0013.
 ## Longer horizon
 
 - **Multiplayer**: PeerJS-backed `Network` module, authoritative-server pattern. Not currently demanded by any game.
-- **Touch / pointer input**: `engine/input.js` is keyboard+mouse only.
+- **Touch / pointer input**: `engine/input.js` is keyboard+mouse only. ADR-0017 anticipates touch hit-target sizing but the actual input mapping is deferred to a separate ADR when a game requires it.
 
 ## Open questions
 
@@ -113,7 +113,7 @@ Real items, blocked behind ADR-0013.
 - **Clown Brawler v1 disposition once v2 is verified**: carrying over from prior session.
 - **poc-square v1 disposition**: keep as the documented "individual-module path" example per the CONVENTIONS.md section.
 - **Party House art direction**: the MVP uses flat colored cards with text labels. The original is pixel art. Future iterations could either commit to a small ShapeSprite-based character set or stay with the abstract card aesthetic.
-- **Minesweeper visual treatment**: the v1 uses the classic Win 3.1 raised/sunken bevel aesthetic rendered procedurally with canvas rectangles. Alternative paths include a ShapeSprite-based tile set (consistent with the engine's procedural-sprite direction) or a flat modern aesthetic in the style of Google's web Minesweeper. The v1 was the safest choice for an MVP; v2 could explore either.
+- **Minesweeper visual treatment** (partially settled): the 2026-05-14 polish pass commits to the classic Win 3.1 raised/sunken bevel aesthetic for the menu, rendered procedurally with canvas rectangles, using the ADR-0017 token vocabulary. Alternative paths (ShapeSprite-based tile set; flat modern aesthetic) remain available for a future v2 if motivated.
 
 ## Sprite generator retirement note
 
@@ -124,10 +124,11 @@ The original sprite generator concept is retired. The forward path is the proced
 - **Engine bundle is the canonical engine fetch target.** Per ADR-0016, fetch `engine/engine.bundle.js` for current engine source; do not reconstruct from individual modules and do not extract from old build files. Any commit that touches an engine module must regenerate the bundle in the same commit (CLAUDE.md §8).
 - **Project knowledge scope is lean by default.** Project knowledge holds canonical session-startup material only: `project-bootstrap.md` and `engine/engine.bundle.js`. Specific game builds and other reference material live in the repo and are fetched on demand.
 - **Bundle inlining is the default build-assembly path.** Per CONVENTIONS.md ("Build assembly" section), new game builds inline the bundle as a single block, then layer scripts, scenes, and bootstrap. `poc-square-v2` is the reference template.
-- **Tooling state on 2026-05-13**: Mid-session the available tool surface dropped to GitHub MCP only (no bash, no local file creation, no present-files). Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response.
+- **Tooling state on 2026-05-13 and 2026-05-14**: Mid-session the available tool surface has dropped to GitHub MCP only (no bash, no local file creation, no present-files) on more than one occasion. Several builds had to be assembled by inlining all source content into a single `create_or_update_file` payload rather than the usual local concat + manual upload workflow. The memory rule about checking in for very large payloads (>30KB single file, >50KB total) was added in response.
 - **Horses Teach Typing concat order** (individual-module path, pre-bundle): lib/riffwave, lib/sfxr, signal-bus, input, script, game-object, scene, audio, storage, game, pause-overlay, rhythm-letter, htt-menu, htt-match, bootstrap.
 - **Party House concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'party-house' })`, then `game.setScene(new PHMenuScene(game))`, then `game.start()`.
-- **Minesweeper concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'minesweeper' })`, then `game.setScene(new MinesweeperMenuScene(game))`, then `game.start()`. The bootstrap also disables the canvas context menu (`canvas.oncontextmenu = e => e.preventDefault()`) since right-click is used for flagging.
+- **Minesweeper concat order** (bundle-inlining path): engine.bundle.js, pause-overlay, menu, match, bootstrap. Bootstrap: `new Engine.Game(canvas, { gameName: 'minesweeper' })`, then `game.setScene(new MinesweeperMenuScene(game))`, then `game.start()`. The bootstrap disables the canvas context menu (`canvas.oncontextmenu = e => e.preventDefault()`) since right-click is used for flagging. After the 2026-05-14 (later) polish pass, the bootstrap also implements the viewport-aware sizing convention per ADR-0017: declares `presets = { regular: { w: 900, h: 600 } }` (no `compact` because right-click is mouse-only), sets `canvas.width`/`canvas.height` to the regular preset, and runs a `fitToViewport()` helper computing `scale = min(innerWidth/w, innerHeight/h)` and setting `canvas.style.width` and `canvas.style.height` in CSS pixels; a `resize` listener re-fits on viewport change.
+- **Visual language tokens (ADR-0017)**: MinesweeperMenuScene defines tokens inline as the `MS_TOKENS` const at the top of the file. Future games applying the visual language should follow the same pattern (with their own prefix, e.g. `PH_TOKENS`) until a second game wants the same vocabulary, at which point tokens get extracted to `scripts/ui-tokens.js` per the ADR's deferred-extraction policy. Helper functions `msDrawRaised`, `msDrawSunken`, `msDrawMine`, `msDrawFlag`, `msFormatTime`, `msDrawLED`, `msDrawMiniBoard`, `msPreviewPattern` are inlined alongside; these are also candidates for promotion to shared helpers when a second consumer appears.
 - **PauseOverlay row layout**: data-driven. Add new row kinds by extending `_buildRows()` and the keypress dispatch in `update()`.
 - **RhythmLetter ownership pattern**: each RhythmLetter holds a reference to the scene via `options.scene` so its `update(dt)` can read `scene.conductorTime`. The position-time function ensures determinism.
 - **Auto-miss policy (HTT)**: `cutoff = goodWindow + 0.05` (= 230ms past target).
