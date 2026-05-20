@@ -6,6 +6,8 @@ Authoritative list of all attachable behavior scripts in this repo. When you cre
 
 `PauseOverlay` is a plain utility class, not a Script subclass. It lives in `scripts/` as the closest available folder.
 
+`bootstrapGame` is a plain utility function (not a class, not a Script subclass) implementing the canonical game bootstrap per ADR-0017. Same rationale as PauseOverlay: it lives in `scripts/` as the closest available folder. The function takes a single options object describing the canvas, presets, gameName, initialScene factory, and an optional right-click suppression flag, then returns `{ game, preset, presetName, isTouch }`.
+
 ## Entries
 
 | Script | File | Status | Purpose | Lifecycle hooks used |
@@ -14,6 +16,7 @@ Authoritative list of all attachable behavior scripts in this repo. When you cre
 | KeyboardMover | scripts/keyboard-mover.js | Implemented | Moves host based on arrow keys. Normalized diagonal. | update |
 | Collider | scripts/collider.js | Implemented | AABB collision via ADR-0010 duck-type contract. | (relies on Scene collision pass) |
 | PauseOverlay | scripts/pause-overlay.js | Implemented | Utility (not Script subclass). ESC pause with volume/mute controls and optional onRestart and onQuit callbacks. Row layout adapts to which callbacks are provided. | (plain class: toggle, isPaused, update, draw) |
+| bootstrapGame | scripts/bootstrap.js | Implemented | Utility (plain function, not a Script subclass). Canonical game bootstrap per ADR-0017: viewport-aware canvas sizing with preset selection between regular and optional compact, fit-to-viewport CSS scaling with resize listener, touch capability detection, optional canvas context-menu suppression, Engine.Game construction with optional gameName for storage namespacing, initial scene set via factory, game start. Returns { game, preset, presetName, isTouch }. | (plain function) |
 | SpriteSheet | scripts/sprite-sheet.js | Implemented | Sprite sheet animation player. Loads image by data URI, cuts frames by (col,row), manages named animation states with fps and loop control. Module-level image cache. API: play(name,force), isDone(), setFlipX(bool), .alpha, .currentAnim, setSrc(src). | on_enter, update, draw |
 | ShapeSprite | scripts/shape-sprite.js | Implemented | Procedural sprite renderer (Shape DSL). Animations are JS draw functions receiving { anim, t, flipX } where t is normalized 0..1 over duration. Sister to SpriteSheet; method surface deliberately matches: play(name,force), isDone(), setFlipX(b), getFlipX(), .alpha, .currentAnim. Performance acceptable for under ~20 entities; for higher counts prefer cached rasters via SpriteSheet. See ADR-0015. | update, draw |
 | PongBall | games/pong/scripts/ball.js | Implemented | Ball movement, wall bouncing, scoring. Emits `ball_scored`. | update, draw, isCollider |
