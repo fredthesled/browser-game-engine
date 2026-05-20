@@ -1,14 +1,15 @@
 # =============================================================================
 # .github/workflows/build.yml
 # =============================================================================
-# Assembles each game that has a build-manifest.json into a single self-
-# contained HTML file, then both uploads the result as a downloadable
-# workflow artifact and commits it back to build/ in the repository.
+# Two jobs run on every push to main and on manual dispatch:
 #
-# Triggers:
-#   - Every push to main
-#   - Manual dispatch from the Actions tab (useful for the first build,
-#     or to force a rebuild without pushing any code)
+#   validate  — runs node --check on every authored .js file.
+#               Fails fast if any file has a syntax error.
+#               Excludes engine/lib/ (vendored) and build/ (auto-generated).
+#
+#   build     — assembles each game with a build-manifest.json into a single
+#               self-contained HTML file. Blocked until validate passes.
+#               Uploads builds as workflow artifacts and commits them to build/.
 #
 # Permissions required:
 #   Settings > Actions > General > Workflow permissions must be set to
@@ -39,7 +40,40 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check JS syntax on all authored source files
+        # Runs node --check on every .js file outside engine/lib/ and build/.
+        # engine/lib/ contains vendored third-party code (not ours to check).
+        # build/ contains auto-generated HTML builds (inlined JS, not checked).
+        # Any syntax error prints the file path and line, then blocks the build.
+        run: |
+          failed=0
+          while IFS= read -r file; do
+            if ! node --check "$file"; then
+              echo "^^^ syntax error in: $file"
+              failed=$((failed + 1))
+            fi
+          done < <(find . -name '*.js' \
+            -not -path './engine/lib/*' \
+            -not -path './build/*' \
+            -not -path './.git/*' \
+            | sort)
+          if [ "$failed" -gt 0 ]; then
+            echo ""
+            echo "Syntax errors found in $failed file(s). Build is blocked."
+            exit 1
+          fi
+          echo "All JS files passed syntax check."
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
 
     steps:
