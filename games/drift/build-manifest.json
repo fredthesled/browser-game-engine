@@ -1,0 +1,16 @@
+{
+  "game": "drift",
+  "title": "Drift",
+  "output": "build/drift.html",
+  "concat": [
+    "engine/lib/inkjs.js",
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "games/drift/encounters/sources.js",
+    "games/drift/scenes/menu.js",
+    "games/drift/scenes/match.js",
+    "games/drift/scenes/game-over.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'drift', presets: { regular: { w: 900, h: 600 }, compact: { w: 540, h: 900 } }, initialScene: (g) => new DriftMenuScene(g), suppressContextMenu: false });"
+}

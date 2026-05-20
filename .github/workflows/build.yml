@@ -1,0 +1,74 @@
+# =============================================================================
+# .github/workflows/build.yml
+# =============================================================================
+# Assembles each game that has a build-manifest.json into a single self-
+# contained HTML file, then both uploads the result as a downloadable
+# workflow artifact and commits it back to build/ in the repository.
+#
+# Triggers:
+#   - Every push to main
+#   - Manual dispatch from the Actions tab (useful for the first build,
+#     or to force a rebuild without pushing any code)
+#
+# Permissions required:
+#   Settings > Actions > General > Workflow permissions must be set to
+#   "Read and write permissions" for the commit-back step to succeed.
+#   The upload-artifact step works regardless of that setting.
+#
+# Adding a new game to the build:
+#   Create games/<name>/build-manifest.json following the schema in
+#   scripts/build-game.sh. The workflow discovers manifests automatically.
+# =============================================================================
+
+name: Build Games
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build all games that have a build-manifest.json
+        run: |
+          chmod +x scripts/build-game.sh
+          found=0
+          while IFS= read -r manifest; do
+            echo "=== Building: $manifest ==="
+            bash scripts/build-game.sh "$manifest"
+            found=$((found + 1))
+          done < <(find games -name 'build-manifest.json' | sort)
+          if [ "$found" -eq 0 ]; then
+            echo "No build-manifest.json files found. Nothing to build."
+          else
+            echo "Done. Built $found game(s)."
+          fi
+
+      - name: Upload builds as downloadable workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-builds-${{ github.run_number }}
+          path: build/*.html
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Commits the built HTML files back to build/ in the repo.
+      # Requires Settings > Actions > General > Workflow permissions
+      # to be set to "Read and write permissions".
+      # Pushes made by GITHUB_TOKEN do not retrigger this workflow.
+      - name: Commit built files back to repository
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "build: auto-regenerate game builds"
+          file_pattern: build/*.html
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
