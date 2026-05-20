@@ -252,57 +252,19 @@ Date: 2026-05-14
 
 **Context**: Three pressures converge.
 
-First, structural: every menu in the repo (Pong, Survivors, Clown Brawler, Horses Teach Typing, Party House, Minesweeper) is assembled from raw canvas calls with hand-tuned coordinates. There is no shared notion of "button," "panel," or "spacing," so each menu re-invents these from scratch. The visible symptoms are inconsistent typography across games, button labels colliding with each other or with adjacent shapes, and no consistent hover or selected affordance.
+First, structural: every menu in the repo (Pong, Survivors, Clown Brawler, Horses Teach Typing, Party House, Minesweeper) is assembled from raw canvas calls with hand-tuned coordinates. There is no shared notion of "button," "panel," or "spacing," so each menu re-invents these from scratch.
 
-Second, responsive: the project's primary developer codes on mobile while games are also played on desktop. Current canvases are fixed at 900x600 pixels, which assumes a landscape viewport considerably wider than a phone in portrait. On a phone the canvas either letterboxes badly or scales down to the point of illegibility. Touch input is also not modeled in `engine/input.js` (keyboard and mouse only per STATE.md), which the ADR does not try to fix but does anticipate.
+Second, responsive: the project's primary developer codes on mobile while games are also played on desktop. Current canvases are fixed at 900x600 pixels, which assumes a landscape viewport considerably wider than a phone in portrait.
 
-Third, forcing function: the next planned commit is a Minesweeper menu polish pass, which would either inherit the existing structural problems or trigger the language work now. Doing the language work first is cheaper than retrofitting a polished menu later.
+Third, forcing function: the next planned commit is a Minesweeper menu polish pass. Doing the language work first is cheaper than retrofitting a polished menu later.
 
-Three options were considered for the structural fix:
+**Consequences** (abbreviated; full context in commit history):
 
-1. *Per-game custom polish, one at a time*. Lowest upfront cost, but every game stays bespoke and the visual collisions return in the next build.
-2. *Shared UI primitive Scripts immediately*. Highest long-term leverage, but requires designing the primitive API before the visual language has been validated by use, and retrofits six existing menus that are working as-is.
-3. *Visual-language tokens first, primitives later (chosen)*. Define the language as design tokens that scenes can reference even via inline drawing. Apply the tokens to one polished menu (Minesweeper) as proof of concept. Promote tokens-plus-inline-drawing into reusable Script primitives only once a second game wants the same vocabulary, at which point the API surface has been informed by actual use.
-
-Two options were considered for the responsive fix:
-
-1. *CSS-scale a fixed canvas*. The canvas stays at 900x600 logical and physical pixels; CSS scales it to fit the viewport. Cheap, no scene-code changes, but text becomes blurry on large monitors and tiny on phones, and aspect ratio mismatch produces letterboxing without recourse.
-2. *Logical canvas with viewport-aware bootstrap (chosen)*. Each game declares one or more logical resolutions (typically a `regular` landscape preset and optionally a `compact` portrait preset). The bootstrap inspects the viewport, picks a logical preset, sets the physical canvas size to match the viewport while preserving aspect ratio, and scenes draw using the logical resolution. Scenes already read `canvas.width` and `canvas.height` for layout in most places, so the change is small. The compact preset is optional; if absent, the bootstrap uses the regular preset and lets it letterbox.
-
-Option 2 was chosen because it preserves visual fidelity at any viewport size, treats portrait phones as a first-class case rather than a degraded landscape view, and requires no engine API change.
-
-**Decision detail**:
-
-*Logical canvas convention*. Each game declares one or two logical resolutions. The convention names them `regular` (landscape, target aspect roughly 3:2) and `compact` (portrait, target aspect roughly 3:5). Default values are `regular: 900x600` and `compact: 540x900`. The bootstrap picks the preset whose aspect ratio is closer to the viewport's, sets `canvas.width` and `canvas.height` to the chosen logical resolution, and uses CSS to scale the element to fit the viewport while preserving aspect ratio. Scene code reads `canvas.width` and `canvas.height` for layout and never assumes a specific value. A game that supports only landscape may omit the compact preset; the bootstrap will then use regular and accept letterboxing on narrow viewports.
-
-*Viewport detection at bootstrap*. The bootstrap reads `window.innerWidth`, `window.innerHeight`, and computes the aspect ratio. It detects touch capability via `('ontouchstart' in window) || navigator.maxTouchPoints > 0`. These values are captured once at startup. Orientation changes during play do not re-bootstrap by default; a future enhancement can listen for `orientationchange` and reset the scene if needed.
-
-*Design tokens (initial values)*. All values are in logical pixels.
-
-Spacing scale: `xs=4`, `sm=8`, `md=16`, `lg=24`, `xl=32`, `xxl=48`.
-
-Typography scale: `small=14`, `body=18`, `label=22`, `heading=36`, `hero=60`. Font family defaults to a stack favoring monospace for the engine's retro aesthetic; per-game themes override.
-
-Hit targets: `mouseMin=32`, `touchMin=48`. A button drawn in a scene reads the active minimum based on the bootstrap's touch detection.
-
-Color roles: `bg`, `surface`, `surfacePressed`, `textPrimary`, `textSecondary`, `accent`, `success`, `danger`. Engine defaults are a neutral palette; each game's theme overrides the role-to-value mapping. The role names are the stable interface.
-
-*UI primitives deferred*. The tokens are usable directly from inline drawing code today. A future ADR will introduce Script primitives (`UiButton`, `UiPanel`, `UiLabel`) once a second game wants the same primitives, at which point the API will be informed by the patterns Minesweeper's menu actually used.
-
-*Touch input scope*. Hit-target enlargement based on touch detection is in scope. Touch-to-pointer event mapping (so right-click flagging works on a phone with a long-press, for example) is out of scope and deferred to a separate ADR. Until that ADR exists, games that require mouse-specific input (like Minesweeper's right-click flag) remain mouse-only and will letterbox sensibly on touch viewports rather than misbehave.
-
-*Per-game theming*. Each game may define a `theme` object that overrides specific token values. Token role names are stable across games; only the values change. Themes live alongside the game's other code under `games/<name>/scripts/ui-theme.js` if non-default, or are defined inline in the game's main menu scene if simple.
-
-**Consequences**:
-
-- Forward, every new menu references the tokens. Whether via inline drawing (current path) or future UI primitive Scripts, the same token vocabulary applies.
-- The first concrete application is the Minesweeper menu polish pass committed alongside this ADR. Tokens for Minesweeper specifically: Win 3.1 grays for surface and surfacePressed; black for textPrimary; the existing LED-style red for accent on counters.
-- Existing menus (Pong, Survivors, Clown Brawler, HTT, Party House) are not retrofitted by this ADR. Retrofits remain in the deferred-to-shipping-mode bucket per ADR-0013. A given game may be polished in a future targeted commit.
-- The Game constructor is unchanged. No engine API change is required. The bootstrap pattern changes, but the Game class is agnostic to logical-vs-physical canvas size since it already reads `canvas.width` and `canvas.height` at draw time. Mouse coordinates from `engine/input.js` are already mapped from physical viewport space to logical canvas space via `getBoundingClientRect()`, so CSS scaling does not affect input correctness.
-- ARCHITECTURE.md gets a new section ("Logical canvas and viewport bootstrap") describing the convention and the reference bootstrap snippet. The Game class section is unchanged.
-- The `scenes-preview.html` harness, when built, will render scenes at both `regular` and `compact` logical resolutions so layout can be inspected at both sizes from one screenshot pass.
-- Token values committed here are starting defaults. Subsequent ADRs may adjust the scale if usage reveals systematic gaps (for example, a missing `xxs=2` for tight UI rows, or a missing `display=84` for splash-screen typography). Adjustments are cheap because token usage is by role name, not by value.
-- This ADR does not introduce a touch input mapping. A game requiring touch-first interaction (a hypothetical future game) will trigger a separate input-system ADR.
+- Forward, every new menu references the ADR-0017 design tokens.
+- First concrete application is the Minesweeper menu polish pass.
+- Existing menus are not retrofitted by this ADR; retrofits remain in the deferred-to-shipping-mode bucket per ADR-0013.
+- The Game constructor is unchanged. The responsive convention lives in the per-game bootstrap snippet.
+- UI primitives (`UiButton`, `UiPanel`, `UiLabel`) are deferred until a second game needs the same vocabulary.
 
 ## ADR-0018: Optional vendored library pattern; narrative module added via inkjs
 
@@ -310,31 +272,42 @@ Date: 2026-05-19
 
 **Decision**: Establish an "optional vendored library" pattern: a vendored library may live under `engine/lib/` while being explicitly excluded from `engine/engine.bundle.js`. Games that need the library include it separately in their build, before the engine bundle. Add `engine/narrative.js` as the first engine module that depends on an optional library, and vendor `engine/lib/inkjs.js` (inkjs 2.4.0, MIT) as the optional library it wraps. Narrative is added to the bundle; inkjs is not.
 
-**Context**: The next planned game, Drift (an FTL-style space exploration prototype), wants branching narrative content for encounters. Pre-flight research surveyed prior art:
+**Context**: The next planned game, Drift, wants branching narrative content for encounters. inkjs (MIT, zero dependencies) is the canonical browser-side ink runtime. At ~249 KB, bundling it into the engine would bloat every game that does not use narrative. Per-game include (placed before the engine bundle in the build) pays the cost only for games that need it.
 
-1. *inkle's ink*. A purpose-built scripting language for branching narrative, widely used in shipped games (80 Days, Heaven's Vault, Sorcery!). The browser runtime is `inkjs` (MIT, zero dependencies). Mature, actively maintained, and the canonical choice for browser-side ink. The `ink-full.js` distribution (~249 KB minified) bundles runtime plus compiler, enabling games to ship plain `.ink` text and compile at startup.
-2. *Yarn Spinner*. Comparable feature set, primarily aimed at the Unity ecosystem. Browser support exists but is less mature than inkjs.
-3. *Twine and similar*. Authoring tools rather than runtime libraries; would not address the embedded-in-game-loop use case Drift needs.
-4. *Custom DSL*. Building a minimal branching-text DSL from scratch is feasible but reinvents a well-understood problem space. Per CLAUDE.md §0 (thin wrappers preferred) and §4 (wrap mature tools), a custom DSL is rejected unless a meaningful constraint forbids inkjs.
+**Consequences** (abbreviated):
 
-The structural challenge is size. The engine bundle is currently ~46 KB; inkjs alone is ~249 KB. Bundling inkjs would multiply the engine fetch size by roughly 6x for every game, including those that do not use narrative. Several distribution options were considered:
+- `engine/narrative.js` wraps `inkjs.Story` with a clean surface: `continue()`, `getChoices()`, `choose()`, `getVar/setVar()`, `bindExternal()`, `observe()`, `goTo()`, `saveState/loadState()`, `hasEnded`, `story` escape hatch.
+- `engine/lib/inkjs.js` is vendored from the npm registry tarball (`inkjs@2.4.0`), MIT-licensed, 248,826 bytes. It is NOT included in the engine bundle.
+- Build concat order for narrative games: `engine/lib/inkjs.js` BEFORE `engine/engine.bundle.js` (load-order critical).
+- The pattern is reusable for future optional libraries under `engine/lib/`.
 
-1. *Include inkjs in the bundle.* Rejected. Bloats every game that does not use narrative, violates ADR-0016's framing of the bundle as the minimal canonical engine artifact, and provides no benefit to non-narrative games.
-2. *Fetch inkjs at runtime from a CDN.* Rejected. Violates ADR-0002 (no external CDN; offline builds are a stated constraint).
-3. *Compile `.ink` to JSON at author time, ship only the runtime (`ink.js`, ~150 KB, no compiler).* Considered. Saves ~100 KB per game by dropping the compiler, but introduces a separate build step (compile `.ink` to `.json` and inline the JSON) that complicates the single-file HTML workflow. Reserved as a future optimization if size pressure ever justifies it; not adopted now.
-4. *Per-game include of `ink-full.js` alongside the engine bundle, with `engine/narrative.js` as a thin JS wrapper inside the bundle (chosen).* Games that use narrative pay the inkjs cost once, in their own build. Games that do not use narrative pay nothing. The wrapper lives in the bundle so it is always available; it errors clearly if inkjs is not loaded.
+## ADR-0019: GitHub Actions as the canonical automated build pipeline
 
-Option 4 was chosen as the cleanest trade-off: zero overhead for non-narrative games, no build step beyond the existing concatenation, no CDN dependency, and a thin wrapper that gives Drift (and any future narrative game) a consistent JS-side surface.
+Date: 2026-05-20
+
+**Decision**: Automated game build assembly is handled by a GitHub Actions workflow (`.github/workflows/build.yml`) that triggers on every push to `main` and on manual dispatch. The workflow discovers all games that have a `games/<name>/build-manifest.json`, assembles each into a self-contained HTML file via `scripts/build-game.sh`, uploads the results as downloadable workflow artifacts, and commits the built files back to `build/` in the repository. The `build-manifest.json` format is the canonical source of truth for a game's concat order and bootstrap call.
+
+**Context**: Prior to this ADR, game builds were assembled manually inside Claude sessions. This created three compounding problems:
+
+1. *Size ceiling.* Claude's `push_files` API call has a practical reliability ceiling around 80 KB total payload. The Drift build (inkjs at 249 KB plus engine and game code) far exceeds this, making manual single-session assembly impossible for any narrative game and fragile for large non-narrative games.
+2. *Context cost.* Assembling a build required Claude to hold all source files in context simultaneously, consuming tokens that could otherwise be spent on game logic. A 300 KB build occupied a meaningful fraction of a session's usable context.
+3. *Session coupling.* A Claude session could not be considered complete until the build was verified. This tied implementation quality to whether a manual upload step succeeded, which varied by file size and session state.
+
+Several alternatives were evaluated:
+
+1. *Claude Artifact with GitHub PAT.* Rejected; ties the build pipeline to a private Claude account, incompatible with the project's goal of universally accessible distribution.
+2. *Google Drive assembly.* Viable as a fallback; does not require a PAT; but requires Claude to hold the entire built content in context, which hit the context ceiling for large builds.
+3. *Chunked push and manual Notepad assembly.* Viable but error-prone; any missed or misordered chunk produces a broken build.
+4. *GitHub Actions (chosen).* Runs entirely on GitHub's infrastructure; free for private repos (2,000 Linux minutes/month on the Free plan, of which a concat build uses ~15 seconds); requires no local tooling; scales to arbitrarily large builds; produces both workflow artifacts (temporary) and committed files (permanent); and is discoverable and auditable via the Actions tab.
 
 **Consequences**:
 
-- `engine/narrative.js` is added to the engine. It exposes `Engine.Narrative`, a thin wrapper around `inkjs.Story` with the following surface: `constructor(source, {compiled})`, `continue()`, `getChoices()`, `choose(index)`, `getVar(name)`, `setVar(name, value)`, `bindExternal(name, fn)`, `observe(name, fn)`, `goTo(path)`, `saveState()`, `loadState(json)`, `hasEnded`, and `story` (escape hatch). The wrapper is roughly 100 lines; the rest of the API surface is intentionally left as a passthrough to the underlying `inkjs.Story` instance via the `story` getter.
-- `engine/lib/inkjs.js` is vendored from the npm registry tarball (`inkjs@2.4.0`, `package/dist/ink-full.js`), 248,826 bytes, MIT-licensed. The GitHub release download URL pattern was found to 404; the npm registry is the reliable source.
-- The bundle is regenerated to include `engine/narrative.js` at position 11 (after `engine/game.js`). The bundle header records narrative.js's blob SHA. `engine/lib/inkjs.js` is NOT included in the bundle and is NOT listed in the bundle header's SHA table; it is treated as an out-of-band library.
-- The build concatenation order in `docs/ARCHITECTURE.md` is updated: for games using narrative, include `engine/lib/inkjs.js` BEFORE the engine bundle (since `engine/narrative.js` references the `inkjs` global). For games not using narrative, no change.
-- `CLAUDE.md` §8 is updated to clarify the regeneration rule: any commit that touches a bundled engine module (any `engine/*.js`, or a vendored library in `engine/lib/` that is included in the bundle) must regenerate the bundle. Optional vendored libraries explicitly excluded from the bundle do not require regeneration when updated, since they are not part of the bundle's contents.
-- `engine/narrative.js` throws a clear error in its constructor if `inkjs` is undefined, with a message pointing at this ADR and at the engine/lib/inkjs.js requirement. This makes the dependency failure mode loud, not subtle.
-- Each game using narrative authors `.ink` source files directly in its own folder (e.g., `games/drift/encounters/*.ink`) and either inlines the source as a string at build time or includes the compiled JSON. The wrapper supports both via the `compiled` option on its constructor. The starting convention is plain `.ink` source compiled at runtime; the JSON snapshot path remains available if startup compile time ever becomes a measurable concern.
-- The pattern is reusable. Future libraries may be added under `engine/lib/` with the same "optional, excluded from the bundle" framing. Each such library should have a one-line note in `engine/lib/README.md` indicating bundle-inclusion status. The decision to include or exclude is per-library and is justified at the time of vendoring (size, license, audience).
-- inkjs's license is MIT, satisfying ADR-0009. The vendored file carries the original license header at the top of its UMD wrapper.
-- The upload of `engine/lib/inkjs.js` is a manual user step (248 KB exceeds the comfortable single-file MCP push threshold, consistent with the build/clown-brawler.html workflow). The repo will reflect the optional library once Trevor performs the upload; the engine wrapper and the bundle do not require the library to be present at commit time, only at runtime when `new Engine.Narrative(...)` is called.
+- Claude sessions are no longer responsible for build assembly. A session commits source files; the workflow builds. This removes the 80 KB ceiling from game complexity entirely.
+- Every game that wants automated builds commits a `games/<name>/build-manifest.json` listing its concat order and bootstrap call. The workflow discovers manifests automatically; no changes to the YAML are needed when adding a new game.
+- The `build-manifest.json` schema is documented in the header of `scripts/build-game.sh`. Fields: `game` (identifier), `title` (HTML title), `output` (output path), `concat` (ordered array of source paths relative to repo root), `bootstrap` (JS string appended after all sources).
+- Built HTML files are committed back to `build/` by `stefanzweifel/git-auto-commit-action`. Pushes made by `GITHUB_TOKEN` do not retrigger the workflow. The repo setting "Settings > Actions > General > Workflow permissions > Read and write permissions" is required for this step.
+- Workflow artifacts (zip of all built HTML files) are retained for 90 days and downloadable from the Actions tab without requiring repo access beyond what the user already has.
+- Existing games without `build-manifest.json` files are unaffected. Manifests are added when each game is next touched, which is also the natural moment to migrate its bootstrap to `bootstrapGame()` if it has not been already.
+- The `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` environment variable opts the workflow into Node.js 24 ahead of the June 2, 2026 forced migration. This variable becomes a no-op after that date and can be removed or left in place.
+- Future workflow improvements (JS syntax validation, GitHub Releases, ink pre-compilation, game scaffolding) are additive and do not require changes to the manifest schema or the build script.
+- The `scripts/build-game.sh` script validates all source files exist before writing any output, so a misconfigured manifest fails fast with a clear error message rather than producing a silently broken build.
