@@ -18,6 +18,11 @@
 # Adding a new game to the build:
 #   Create games/<name>/build-manifest.json following the schema in
 #   scripts/build-game.sh. The workflow discovers manifests automatically.
+#
+# Node.js runtime:
+#   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 opts into Node.js 24 now.
+#   Node.js 24 becomes the forced default on June 2, 2026; this env var
+#   can be removed after that date without any effect.
 # =============================================================================
 
 name: Build Games
@@ -29,6 +34,9 @@ on:
 
 permissions:
   contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build:
