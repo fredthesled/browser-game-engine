@@ -1,11 +1,26 @@
 // scripts/shape-sprite.js
 // Procedural sprite renderer. Animation states are JavaScript draw functions
 // that receive a normalized time t in [0, 1] and draw into the host-local
-// canvas context. The script manages timing, looping, flip, and alpha.
+// canvas context. The script manages timing, looping, flip, alpha, and
+// optional per-animation easing.
+//
 // Sister to SpriteSheet (which renders raster frames); use ShapeSprite when
 // sprite content is procedurally drawn, use SpriteSheet when it is a raster
 // image. The two are interchangeable from the host's perspective and share
 // the same lifecycle and method surface.
+//
+// Changes since initial implementation:
+//   - play() now returns `this` for fluent chaining.
+//   - onDone(fn) registers a one-shot callback invoked when a non-looping
+//     animation completes. Cleared automatically on the next play() call.
+//     Allows reactive state transitions without polling isDone() each frame:
+//       sprite.play('dying').onDone(() => scene.remove(host));
+//   - Animation definitions now accept an optional `easing` field:
+//     a function (t) => t applied to the raw linear t before the draw call.
+//     Accepts the same functions as Tween's easing library (Tween.easeOutElastic
+//     etc.), decoupling visual timing curve from animation duration without
+//     requiring per-frame easing logic inside the draw function itself.
+//
 // Depends on: Engine.Script.
 // Used by: game scripts that want procedurally drawn animated sprites.
 // See ADR-0015 for design rationale.
@@ -16,25 +31,29 @@ class ShapeSprite extends Engine.Script {
   /**
    * @param {GameObject} host
    * @param {object} options
-   * @param {object} options.animations - Map of animation name to { duration, loop, draw }.
-   *   - duration: seconds the animation runs from t=0 to t=1. Defaults to 1.0.
-   *   - loop: if false, the animation stops at t=1 and isDone() becomes true.
-   *           Defaults to true.
-   *   - draw: function(ctx, state) called each frame to draw the current animation.
-   *           state is { anim, t, flipX }. t is normalized 0..1 over duration.
-   *           Draws in host-local space; (0,0) is the host position.
-   * @param {string} [options.initialAnim] - Animation to start in. Defaults to the
-   *   first key in options.animations.
+   * @param {object} options.animations - Map of animation name to definition:
+   *   {
+   *     duration: number,      // seconds from t=0 to t=1. Default 1.0.
+   *     loop: boolean,         // true loops, false stops at t=1. Default true.
+   *     easing: function,      // optional (t) => t applied before draw.
+   *                            // Same signature as Tween easing functions.
+   *     draw: function(ctx, state)  // called each frame.
+   *   }                        // state is { anim, t, flipX }.
+   *                            // t is normalized 0..1 (after easing if set).
+   *                            // draws in host-local space; (0,0) = host pos.
+   * @param {string} [options.initialAnim] - Animation to start in. Defaults to
+   *   the first key in options.animations.
    */
   constructor(host, options = {}) {
     super(host);
-    this._animations = options.animations || {};
-    const names = Object.keys(this._animations);
+    this._animations  = options.animations || {};
+    const names       = Object.keys(this._animations);
     this._currentAnim = options.initialAnim || names[0] || '';
-    this._elapsed = 0;
-    this._flipX = false;
-    this._done = false;
-    this.alpha = 1.0;
+    this._elapsed     = 0;
+    this._flipX       = false;
+    this._done        = false;
+    this._onDone      = null;
+    this.alpha        = 1.0;
   }
 
   /** Current animation name. */
@@ -42,23 +61,41 @@ class ShapeSprite extends Engine.Script {
 
   /**
    * Switch to a different animation. No-op if name is already current unless
-   * force is true. Resets elapsed time and clears done state.
+   * force is true. Resets elapsed time and clears done state and any pending
+   * onDone callback. Returns `this` for fluent chaining:
+   *   sprite.play('dying').onDone(() => scene.remove(host));
    */
   play(name, force = false) {
-    if (!force && name === this._currentAnim && !this._done) return;
+    if (!force && name === this._currentAnim && !this._done) return this;
     if (!this._animations[name]) {
       console.warn(`ShapeSprite.play: unknown animation '${name}'`);
-      return;
+      return this;
     }
     this._currentAnim = name;
-    this._elapsed = 0;
-    this._done = false;
+    this._elapsed     = 0;
+    this._done        = false;
+    this._onDone      = null;
+    return this;
+  }
+
+  /**
+   * Register a one-shot callback invoked when the current non-looping
+   * animation completes. Cleared automatically on the next play() call,
+   * preventing stale callbacks when animations are interrupted mid-way.
+   * Ignored if the current animation is looping (a looping anim never fires
+   * isDone and never calls this callback).
+   * Returns `this` so it chains naturally from play():
+   *   sprite.play('dying').onDone(() => this._state = 'dead');
+   */
+  onDone(fn) {
+    this._onDone = fn;
+    return this;
   }
 
   /**
    * True when a non-looping animation has finished. Stays true until play()
-   * is called with a new animation (or the same one with force=true). The
-   * owning script is responsible for transitioning by checking this each frame.
+   * is called. Scripts may poll this or use onDone() for the callback path;
+   * both are supported and may coexist (onDone fires first).
    */
   isDone() { return this._done; }
 
@@ -77,7 +114,14 @@ class ShapeSprite extends Engine.Script {
     if (this._elapsed >= duration) {
       if (anim.loop === false) {
         this._elapsed = duration;
-        this._done = true;
+        this._done    = true;
+        if (this._onDone) {
+          // Clear before invoking to prevent re-entrancy if the callback
+          // calls play() and triggers another animation.
+          const cb = this._onDone;
+          this._onDone = null;
+          cb();
+        }
       } else {
         this._elapsed = this._elapsed % duration;
       }
@@ -88,7 +132,11 @@ class ShapeSprite extends Engine.Script {
     const anim = this._animations[this._currentAnim];
     if (!anim || typeof anim.draw !== 'function') return;
     const duration = anim.duration > 0 ? anim.duration : 1.0;
-    const t = Math.min(1, this._elapsed / duration);
+    const rawT = Math.min(1, this._elapsed / duration);
+    // Apply per-animation easing if defined. This lets the visual timing
+    // curve be specified alongside the animation definition rather than
+    // baked into the draw function.
+    const t     = anim.easing ? anim.easing(rawT) : rawT;
     const state = { anim: this._currentAnim, t, flipX: this._flipX };
 
     ctx.save();
