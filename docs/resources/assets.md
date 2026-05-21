@@ -2,6 +2,42 @@
 
 Curated list of free or freely-licensed sources for game art, audio, and fonts. The goal is breadth (cover most needs) without sprawl. Prefer CC0 / public domain where available, since it eliminates the per-asset attribution-tracking overhead.
 
+## Asset pipeline: how to get assets into a build
+
+The build script (`scripts/build-game.sh`) supports a top-level `"assets"` array in `build-manifest.json`. List PNG, JPG, WebP, or GIF files there; the runner base64-encodes each one and injects it as a property on a global `ASSETS` object before the game sources:
+
+```json
+{
+  "assets": [
+    "games/clown-brawler/assets/gorilla-sheet.png",
+    "games/clown-brawler/assets/clown-sheet.png"
+  ]
+}
+```
+
+Game code then references:
+
+```js
+const sheet = new SpriteSheet(host, {
+  src: ASSETS['gorilla-sheet'],
+  frameW: 48, frameH: 48,
+  animations: { walk: { frames: [[0,0],[1,0],[2,0]], fps: 8, loop: true } }
+});
+```
+
+The key is the filename without its extension. No CDN, no external URLs, no runtime fetching. The entire image lives inside the HTML file.
+
+**Workflow for adding an asset (no local tools needed):**
+
+1. Find or create the sprite sheet (see sourcing sections below).
+2. Upload the PNG to `games/<name>/assets/` via the GitHub web UI: navigate to the folder, click "Add file > Upload files", drag and drop the PNG.
+3. Add the path to the `"assets"` array in the game's `build-manifest.json`.
+4. Commit. The next push triggers the Actions build; the runner inlines the image automatically.
+
+**Size budget:** base64 encodes at roughly 4:3 overhead. A 60 KB PNG becomes about 80 KB of inlined text. Staying under 200 KB total assets per game keeps the HTML file below 1 MB and the build fast.
+
+**SVG is not part of this pipeline.** SVG content belongs in `ShapeSprite` draw functions (procedural, code-only). The asset pipeline handles raster formats only.
+
 ## All-in-one
 
 ### Kenney.nl
@@ -11,7 +47,8 @@ Curated list of free or freely-licensed sources for game art, audio, and fonts. 
 - **Coverage**: 2D sprites, 3D models, UI elements, fonts, audio (sound effects and music).
 - **Style**: Clean, consistent across packs. Mix-and-match friendly.
 - **Why this is first**: One person has produced over 40,000 CC0 assets. The art style is consistent enough that combining packs from different categories looks intentional rather than stitched together. Best single source for prototypes.
-- **Notable packs**: Game Assets All-in-1, multiple Audio packs, UI Pack, 1-Bit Pack.
+- **Notable packs**: Game Assets All-in-1, multiple Audio packs, UI Pack, 1-Bit Pack, Toon Characters 1.
+- **Brawler / action game packs to check**: "Toon Characters 1" for cartoony characters; "Platformer Pack" and "Platformer Pack Redux" for environments; "Impact & Explosion Particle Pack" for hit effects.
 
 ### Itch.io free game assets
 
@@ -159,6 +196,14 @@ For pixel-art games where a TTF doesn't quite fit, several creators have CC0 pix
 
 These run in the browser and produce assets we can bundle. They are not assets themselves; they are how you make them.
 
+### Piskel (pixel art sprite editor)
+
+- **URL**: https://www.piskelapp.com/
+- **License**: GPL (source), but sprites you create are yours under whatever license you choose.
+- **What it does**: Browser-based pixel art editor with multi-frame animation support. Draw frames, preview the animation, export as a single PNG sprite sheet in the exact grid format SpriteSheet expects.
+- **Why this matters**: No install required. Runs in any browser, including on a corporate network. The exported PNG goes straight into `games/<name>/assets/` via the GitHub web UI, then into the build manifest. This is the primary path for custom character sprites when no CC0 sheet fits the game's art requirements.
+- **Workflow**: Create sprite, set frame dimensions, draw each animation frame, export PNG sprite sheet, upload to GitHub, add to manifest.
+
 ### BeepBox / JummBox / UltraBox (chiptune music)
 
 - **URLs**: https://www.beepbox.co/, https://jummb.us/, https://ultrabox.blog/
@@ -182,5 +227,5 @@ A paid pro version of jsfxr exists with a bundle export feature. Not necessary f
 When you don't want to manage asset files at all:
 
 - **Sound effects**: jsfxr or ZzFX (see `libraries.md`). Sounds live as small parameter blocks in source.
-- **Sprite generation**: For prototyping, draw shapes via the Canvas API. Skip the sprite step entirely. Our `RectRenderer` is the start of this; a `CircleRenderer` and `PolygonRenderer` are easy follow-ups when needed.
+- **Sprite content**: `ShapeSprite` draw functions. Everything drawn with Canvas 2D primitives; no image files. Best for simple geometric aesthetics or when import workflow is not worth it.
 - **Music**: Tone.js (see `libraries.md`) can compose chiptune-style music procedurally. Heavier, but no audio files.
