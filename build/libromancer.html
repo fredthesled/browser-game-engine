@@ -3171,7 +3171,7 @@ class LibromancerCombatScene extends Engine.Scene {
   }
 }
 
-bootstrapGame({ canvasId: 'c', presets: { regular: { w: 900, h: 600 }, compact: { w: 600, h: 800 } }, gameName: 'libromancer', initialScene: function(game, preset) { return new LibromancerMenuScene(game, preset); }, suppressContextMenu: true });
+bootstrapGame({ canvasId: 'game', presets: { regular: { w: 900, h: 600 }, compact: { w: 600, h: 800 } }, gameName: 'libromancer', initialScene: function(game) { var p = { w: game.canvas.width, h: game.canvas.height }; return new LibromancerMenuScene(game, p); }, suppressContextMenu: true });
 </script>
 </body>
 </html>
