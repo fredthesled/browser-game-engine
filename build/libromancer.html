@@ -1,0 +1,3177 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Libromancer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+
+/* ==== engine/engine.bundle.js ==== */
+// ============================================================================
+// engine.bundle.js - Auto-generated engine bundle
+// ============================================================================
+//
+// Single-file concatenation of the browser-game-engine, suitable for inclusion
+// in builds and as the canonical fetch target when a session needs the current
+// engine source.
+//
+// Future Claude: fetch THIS file to obtain current engine state. Do not
+// reconstruct from individual modules or extract from old game builds.
+// Rationale and full design notes are in ADR-0016.
+//
+// Generated: 2026-05-19
+//
+// Source files (canonical concat order; SHAs are the GitHub blob hashes at
+// the time this bundle was last regenerated):
+//   engine/lib/riffwave.js   37df6f08cc96352c30f7a1a05d72117752567d27
+//   engine/lib/sfxr.js       9641b790c2195b1da8fd61834d05034206f73a5c
+//   engine/signal-bus.js     bcd999adcd1d5a9de6d26d9bfda28e8ab9f9ddf6
+//   engine/input.js          199919c5a65406ea45d48e26d4eff00c305b6329
+//   engine/script.js         d0c8752b5e5c577011754e62c1e57a671249e261
+//   engine/game-object.js    1b130d0496e355cd9e9221202bac6677603e624f
+//   engine/scene.js          5fd85826005dea448b64b86b95003c2d6971476b
+//   engine/audio.js          7fb026fe99fe0a737a8a4be2dcfdfdfd0d76624a
+//   engine/storage.js        f257c6753887fa3ca3fcfbc6419266ac2a14749b
+//   engine/game.js           ae8c45bedf0e4779abd584f94efa86bd9d0b99bc
+//   engine/narrative.js      daa78ed678039d5981e3968661c3cbfa7c24111a
+//
+// Regeneration recipe (mandatory when any engine module changes; see
+// CLAUDE.md section 8):
+//   1. List engine/ and engine/lib/ via GitHub MCP get_file_contents to read
+//      the current set of modules and their blob SHAs.
+//   2. Fetch each source file in the order above.
+//   3. Concatenate the file contents in that order, separating each with a
+//      file-boundary banner of the form shown below.
+//   4. Update this header: refresh the generated date and rewrite the SHA
+//      list to match the current blob hashes.
+//   5. If a module was added or removed, also update CLAUDE.md section 8's
+//      bundle note and the file layout summary plus build concatenation
+//      order section in docs/ARCHITECTURE.md.
+//   6. Push the regenerated bundle in the same commit as the engine change.
+//
+// ============================================================================
+
+
+// ============================================================================
+// engine/lib/riffwave.js
+// ============================================================================
+
+/*
+ * RIFFWAVE.js v0.03 - Audio encoder for HTML5 <audio> elements.
+ * Copyleft 2011 by Pedro Ladaria <pedro.ladaria at Gmail dot com>
+ *
+ * Public Domain
+ *
+ * Changelog:
+ *
+ * 0.01 - First release
+ * 0.02 - New faster base64 encoding
+ * 0.03 - Support for 16bit samples
+ *
+ * Notes:
+ *
+ * 8 bit data is unsigned: 0..255
+ * 16 bit data is signed: -32,768..32,767
+ *
+ */
+
+var FastBase64 = {
+
+  chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+  encLookup: [],
+
+  Init: function() {
+    for (var i=0; i<4096; i++) {
+      this.encLookup[i] = this.chars[i >> 6] + this.chars[i & 0x3F];
+    }
+  },
+
+  Encode: function(src) {
+    var len = src.length;
+    var dst = '';
+    var i = 0;
+    var n;
+    while (len > 2) {
+      n = (src[i] << 16) | (src[i+1]<<8) | src[i+2];
+      dst+= this.encLookup[n >> 12] + this.encLookup[n & 0xFFF];
+      len-= 3;
+      i+= 3;
+    }
+    if (len > 0) {
+      var n1= (src[i] & 0xFC) >> 2;
+      var n2= (src[i] & 0x03) << 4;
+      if (len > 1) n2 |= (src[++i] & 0xF0) >> 4;
+      dst+= this.chars[n1];
+      dst+= this.chars[n2];
+      if (len == 2) {
+        var n3= (src[i++] & 0x0F) << 2;
+        n3 |= (src[i] & 0xC0) >> 6;
+        dst+= this.chars[n3];
+      }
+      if (len == 1) dst+= '=';
+      dst+= '=';
+    }
+    return dst;
+  } // end Encode
+
+}
+
+FastBase64.Init();
+
+var RIFFWAVE = function(data) {
+
+  this.data = [];        // Array containing audio samples
+  this.wav = [];         // Array containing the generated wave file
+  this.dataURI = '';     // http://en.wikipedia.org/wiki/Data_URI_scheme
+
+  this.header = {                         // OFFS SIZE NOTES
+    chunkId      : [0x52,0x49,0x46,0x46], // 0    4    "RIFF" = 0x52494646
+    chunkSize    : 0,                     // 4    4    36+SubChunk2Size = 4+(8+SubChunk1Size)+(8+SubChunk2Size)
+    format       : [0x57,0x41,0x56,0x45], // 8    4    "WAVE" = 0x57415645
+    subChunk1Id  : [0x66,0x6d,0x74,0x20], // 12   4    "fmt " = 0x666d7420
+    subChunk1Size: 16,                    // 16   4    16 for PCM
+    audioFormat  : 1,                     // 20   2    PCM = 1
+    numChannels  : 1,                     // 22   2    Mono = 1, Stereo = 2...
+    sampleRate   : 8000,                  // 24   4    8000, 44100...
+    byteRate     : 0,                     // 28   4    SampleRate*NumChannels*BitsPerSample/8
+    blockAlign   : 0,                     // 32   2    NumChannels*BitsPerSample/8
+    bitsPerSample: 8,                     // 34   2    8 bits = 8, 16 bits = 16
+    subChunk2Id  : [0x64,0x61,0x74,0x61], // 36   4    "data" = 0x64617461
+    subChunk2Size: 0                      // 40   4    data size = NumSamples*NumChannels*BitsPerSample/8
+  };
+
+  function u32ToArray(i) {
+    return [i&0xFF, (i>>8)&0xFF, (i>>16)&0xFF, (i>>24)&0xFF];
+  }
+
+  function u16ToArray(i) {
+    return [i&0xFF, (i>>8)&0xFF];
+  }
+
+  function split16bitArray(data) {
+    var r = [];
+    var j = 0;
+    var len = data.length;
+    for (var i=0; i<len; i++) {
+      r[j++] = data[i] & 0xFF;
+      r[j++] = (data[i]>>8) & 0xFF;
+    }
+    return r;
+  }
+
+  this.Make = function(data) {
+    if (data instanceof Array) this.data = data;
+    this.header.byteRate = (this.header.sampleRate * this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.blockAlign = (this.header.numChannels * this.header.bitsPerSample) >> 3;
+    this.header.subChunk2Size = this.data.length;
+    this.header.chunkSize = 36 + this.header.subChunk2Size;
+
+    this.wav = this.header.chunkId.concat(
+      u32ToArray(this.header.chunkSize),
+      this.header.format,
+      this.header.subChunk1Id,
+      u32ToArray(this.header.subChunk1Size),
+      u16ToArray(this.header.audioFormat),
+      u16ToArray(this.header.numChannels),
+      u32ToArray(this.header.sampleRate),
+      u32ToArray(this.header.byteRate),
+      u16ToArray(this.header.blockAlign),
+      u16ToArray(this.header.bitsPerSample),
+      this.header.subChunk2Id,
+      u32ToArray(this.header.subChunk2Size),
+      this.data
+    );
+    this.dataURI = 'data:audio/wav;base64,'+FastBase64.Encode(this.wav);
+  };
+
+  if (data instanceof Array) this.Make(data);
+
+}; // end RIFFWAVE
+
+(function (root, factory) {
+  // Handle ESM where 'this' is undefined
+  var globalRoot = root || (typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {}));
+  if(typeof define === "function" && define.amd) {
+    define([], function(){
+      return (globalRoot.RIFFWAVE = factory());
+    });
+  } else if(typeof module === "object" && module.exports) {
+    module.exports = (globalRoot.RIFFWAVE = factory());
+  } else {
+    globalRoot.RIFFWAVE = factory();
+  }
+}(this, function() {
+  return RIFFWAVE;
+}));
+
+if (typeof globalThis !== 'undefined' && !globalThis.RIFFWAVE) {
+  globalThis.RIFFWAVE = RIFFWAVE;
+}
+if (typeof window !== 'undefined' && !window.RIFFWAVE) {
+  window.RIFFWAVE = RIFFWAVE;
+}
+
+
+// ============================================================================
+// engine/lib/sfxr.js
+// ============================================================================
+
+// Wave shapes
+var SQUARE = 0;
+var SAWTOOTH = 1;
+var SINE = 2;
+var NOISE = 3;
+
+// Playback volume
+var masterVolume = 1;
+
+var OVERSAMPLING = 8;
+
+// Declare sfxr in module scope for ESM strict mode compatibility
+var sfxr;
+
+/*** Core data structure ***/
+
+function Params() {
+  this.oldParams = true;
+
+  this.wave_type = SQUARE;
+
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.3;
+  this.p_env_punch = 0;
+  this.p_env_decay = 0.4;
+
+  this.p_base_freq = 0.3;
+  this.p_freq_limit = 0;
+  this.p_freq_ramp = 0;
+  this.p_freq_dramp = 0;
+  this.p_vib_strength = 0;
+  this.p_vib_speed = 0;
+
+  this.p_arp_mod = 0;
+  this.p_arp_speed = 0;
+
+  this.p_duty = 0;
+  this.p_duty_ramp = 0;
+
+  this.p_repeat_speed = 0;
+
+  this.p_pha_offset = 0;
+  this.p_pha_ramp = 0;
+
+  this.p_lpf_freq = 1;
+  this.p_lpf_ramp = 0;
+  this.p_lpf_resonance = 0;
+  this.p_hpf_freq = 0;
+  this.p_hpf_ramp = 0;
+
+  this.sound_vol = 0.5;
+  this.sample_rate = 44100;
+  this.sample_size = 8;
+}
+
+function sqr(x) { return x * x }
+function cube(x) { return x * x * x }
+function sign(x) { return x < 0 ? -1 : 1 }
+function log(x, b) { return Math.log(x) / Math.log(b); }
+var pow = Math.pow;
+
+function frnd(range) {
+  return Math.random() * range;
+}
+
+function rndr(from, to) {
+  return Math.random() * (to - from) + from;
+}
+
+function rnd(max) {
+  return Math.floor(Math.random() * (max + 1));
+}
+
+function assembleFloat(sign, exponent, mantissa)
+{
+    return (sign << 31) | (exponent << 23) | (mantissa);
+}
+
+function floatToNumber(flt)
+{
+    if (isNaN(flt))
+        return assembleFloat(0, 0xFF, 0x1337);
+
+    var sign = (flt < 0) ? 1 : 0;
+    flt = Math.abs(flt);
+    if (flt == 0.0)
+        return assembleFloat(sign, 0, 0);
+
+    var exponent = Math.floor(Math.log(flt) / Math.LN2);
+    if (exponent > 127 || exponent < -126)
+        return assembleFloat(sign, 0xFF, 0);
+
+    var mantissa = flt / Math.pow(2, exponent);
+    return assembleFloat(sign, exponent + 127, (mantissa * Math.pow(2, 23)) & 0x7FFFFF);
+}
+
+function numberToFloat(bytes) {
+    var sign = (bytes & 0x80000000) ? -1 : 1;
+    var exponent = ((bytes >> 23) & 0xFF) - 127;
+    var significand = (bytes & ~(-1 << 23));
+
+    if (exponent == 128)
+        return sign * ((significand) ? Number.NaN : Number.POSITIVE_INFINITY);
+
+    if (exponent == -127) {
+        if (significand == 0) return sign * 0.0;
+        exponent = -126;
+        significand /= (1 << 22);
+    } else significand = (significand | (1 << 23)) / (1 << 23);
+
+    return sign * significand * Math.pow(2, exponent);
+}
+
+var b58alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+var params_order = [
+  "wave_type",
+  "p_env_attack",
+  "p_env_sustain",
+  "p_env_punch",
+  "p_env_decay",
+  "p_base_freq",
+  "p_freq_limit",
+  "p_freq_ramp",
+  "p_freq_dramp",
+  "p_vib_strength",
+  "p_vib_speed",
+  "p_arp_mod",
+  "p_arp_speed",
+  "p_duty",
+  "p_duty_ramp",
+  "p_repeat_speed",
+  "p_pha_offset",
+  "p_pha_ramp",
+  "p_lpf_freq",
+  "p_lpf_ramp",
+  "p_lpf_resonance",
+  "p_hpf_freq",
+  "p_hpf_ramp"
+];
+
+var params_signed = ["p_freq_ramp", "p_freq_dramp", "p_arp_mod", "p_duty_ramp", "p_pha_offset", "p_pha_ramp", "p_lpf_ramp", "p_hpf_ramp"];
+
+Params.prototype.toB58 = function() {
+  var convert = [];
+  for (var pi in params_order) {
+    var p = params_order[pi];
+    if (p == "wave_type") {
+      convert.push(this[p]);
+    } else if (p.indexOf("p_") == 0) {
+      var val = this[p];
+      val = floatToNumber(val);
+      convert.push(0xff & val);
+      convert.push(0xff & (val >> 8))
+      convert.push(0xff & (val >> 16))
+      convert.push(0xff & (val >> 24))
+    }
+  }
+  return function(B,A){var d=[],s="",i,j,c,n;for(i in B){j=0,c=B[i];s+=c||s.length^i?"":1;while(j in d||c){n=d[j];n=n?n*256+c:c;c=n/58|0;d[j]=n%58;j++}}while(j--)s+=A[d[j]];return s}(convert, b58alphabet);
+}
+
+Params.prototype.fromB58 = function(b58encoded) {
+  this.fromJSON(sfxr.b58decode(b58encoded));
+  return this;
+}
+
+Params.prototype.fromJSON = function(struct) {
+  for (var p in struct) {
+    if (struct.hasOwnProperty(p)) {
+      this[p] = struct[p];
+    }
+  }
+  return this;
+}
+
+Params.prototype.pickupCoin = function () {
+  this.wave_type = SAWTOOTH;
+  this.p_base_freq = 0.4 + frnd(0.5);
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.1);
+  this.p_env_decay = 0.1 + frnd(0.4);
+  this.p_env_punch = 0.3 + frnd(0.3);
+  if (rnd(1)) {
+    this.p_arp_speed = 0.5 + frnd(0.2);
+    this.p_arp_mod = 0.2 + frnd(0.4);
+  }
+  return this;
+}
+
+Params.prototype.laserShoot = function () {
+  this.wave_type = rnd(2);
+  if(this.wave_type === SINE && rnd(1))
+    this.wave_type = rnd(1);
+  if (rnd(2) === 0) {
+    this.p_base_freq = 0.3 + frnd(0.6);
+    this.p_freq_limit = frnd(0.1);
+    this.p_freq_ramp = -0.35 - frnd(0.3);
+  } else {
+    this.p_base_freq = 0.5 + frnd(0.5);
+    this.p_freq_limit = this.p_base_freq - 0.2 - frnd(0.6);
+    if (this.p_freq_limit < 0.2) this.p_freq_limit = 0.2;
+    this.p_freq_ramp = -0.15 - frnd(0.2);
+  }
+  if (this.wave_type === SAWTOOTH)
+    this.p_duty = 1;
+  if (rnd(1)) {
+    this.p_duty = frnd(0.5);
+    this.p_duty_ramp = frnd(0.2);
+  } else {
+    this.p_duty = 0.4 + frnd(0.5);
+    this.p_duty_ramp = -frnd(0.7);
+  }
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.2);
+  this.p_env_decay = frnd(0.4);
+  if (rnd(1))
+    this.p_env_punch = frnd(0.3);
+  if (rnd(2) === 0) {
+    this.p_pha_offset = frnd(0.2);
+    this.p_pha_ramp = -frnd(0.2);
+  }
+    this.p_hpf_freq = frnd(0.3);
+
+  return this;
+}
+
+Params.prototype.explosion = function () {
+  this.wave_type = NOISE;
+  if (rnd(1)) {
+    this.p_base_freq = sqr(0.1 + frnd(0.4));
+    this.p_freq_ramp = -0.1 + frnd(0.4);
+  } else {
+    this.p_base_freq = sqr(0.2 + frnd(0.7));
+    this.p_freq_ramp = -0.2 - frnd(0.2);
+  }
+  if (rnd(4) === 0)
+    this.p_freq_ramp = 0;
+  if (rnd(2) === 0)
+    this.p_repeat_speed = 0.3 + frnd(0.5);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.3);
+  this.p_env_decay = frnd(0.5);
+  if (rnd(1)) {
+    this.p_pha_offset = -0.3 + frnd(0.9);
+    this.p_pha_ramp = -frnd(0.3);
+  }
+  this.p_env_punch = 0.2 + frnd(0.6);
+  if (rnd(1)) {
+    this.p_vib_strength = frnd(0.7);
+    this.p_vib_speed = frnd(0.6);
+  }
+  if (rnd(2) === 0) {
+    this.p_arp_speed = 0.6 + frnd(0.3);
+    this.p_arp_mod = 0.8 - frnd(1.6);
+  }
+
+  return this;
+}
+
+Params.prototype.powerUp = function () {
+  if (rnd(1)) {
+    this.wave_type = SAWTOOTH;
+    this.p_duty = 1;
+  } else {
+    this.p_duty = frnd(0.6);
+  }
+  this.p_base_freq = 0.2 + frnd(0.3);
+  if (rnd(1)) {
+    this.p_freq_ramp = 0.1 + frnd(0.4);
+    this.p_repeat_speed = 0.4 + frnd(0.4);
+  } else {
+    this.p_freq_ramp = 0.05 + frnd(0.2);
+    if (rnd(1)) {
+      this.p_vib_strength = frnd(0.7);
+      this.p_vib_speed = frnd(0.6);
+    }
+  }
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.4);
+  this.p_env_decay = 0.1 + frnd(0.4);
+
+  return this;
+}
+
+Params.prototype.hitHurt = function () {
+  this.wave_type = rnd(2);
+  if (this.wave_type === SINE)
+    this.wave_type = NOISE;
+  if (this.wave_type === SQUARE)
+    this.p_duty = frnd(0.6);
+  if (this.wave_type === SAWTOOTH)
+    this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.6);
+  this.p_freq_ramp = -0.3 - frnd(0.4);
+  this.p_env_attack = 0;
+  this.p_env_sustain = frnd(0.1);
+  this.p_env_decay = 0.1 + frnd(0.2);
+  if (rnd(1))
+    this.p_hpf_freq = frnd(0.3);
+  return this;
+}
+
+Params.prototype.jump = function () {
+  this.wave_type = SQUARE;
+  this.p_duty = frnd(0.6);
+  this.p_base_freq = 0.3 + frnd(0.3);
+  this.p_freq_ramp = 0.1 + frnd(0.2);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.3);
+  this.p_env_decay = 0.1 + frnd(0.2);
+  if (rnd(1))
+    this.p_hpf_freq = frnd(0.3);
+  if (rnd(1))
+    this.p_lpf_freq = 1 - frnd(0.6);
+  return this;
+}
+
+Params.prototype.blipSelect = function () {
+  this.wave_type = rnd(1);
+  if (this.wave_type === SQUARE)
+    this.p_duty = frnd(0.6);
+  else
+    this.p_duty = 1;
+  this.p_base_freq = 0.2 + frnd(0.4);
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.1 + frnd(0.1);
+  this.p_env_decay = frnd(0.2);
+  this.p_hpf_freq = 0.1;
+  return this;
+}
+
+Params.prototype.synth = function () {
+  this.wave_type = rnd(1);
+  this.p_base_freq = [0.2723171360931539, 0.19255692561524382, 0.13615778746815113][rnd(2)];
+  this.p_env_attack = rnd(4) > 3 ? frnd(0.5) : 0;
+  this.p_env_sustain = frnd(1);
+  this.p_env_punch = frnd(1);
+  this.p_env_decay = frnd(0.9) + 0.1;
+  this.p_arp_mod = [0, 0, 0, 0, -0.3162, 0.7454, 0.7454][rnd(6)];
+  this.p_arp_speed = frnd(0.5) + 0.4;
+  this.p_duty = frnd(1);
+  this.p_duty_ramp = rnd(2) == 2 ? frnd(1) : 0;
+  this.p_lpf_freq = [1, 0.9 * frnd(1) * frnd(1) + 0.1][rnd(1)];
+  this.p_lpf_ramp = rndr(-1, 1);
+  this.p_lpf_resonance = frnd(1);
+  this.p_hpf_freq = rnd(3) == 3 ? frnd(1) : 0;
+  this.p_hpf_ramp = rnd(3) == 3 ? frnd(1) : 0;
+  return this;
+}
+
+Params.prototype.tone = function () {
+  this.wave_type = SINE;
+  this.p_base_freq = 0.35173364;
+  this.p_env_attack = 0;
+  this.p_env_sustain = 0.6641;
+  this.p_env_decay = 0;
+  this.p_env_punch = 0;
+  return this;
+}
+
+Params.prototype.click = function() {
+  const base = ["explosion", "hitHurt"][rnd(1)];
+  this[base]();
+  if (rnd(1)) {
+    this.p_freq_ramp = -0.5 + frnd(1.0);
+  }
+  if (rnd(1)) {
+    this.p_env_sustain = (frnd(0.4) + 0.2) * this.p_env_sustain;
+    this.p_env_decay = (frnd(0.4) + 0.2) * this.p_env_decay;
+  }
+  if (rnd(3) == 0) {
+    this.p_env_attack = frnd(0.3);
+  }
+  this.p_base_freq = 1 - frnd(0.25);
+  this.p_hpf_freq = 1 - frnd(0.1);
+  return this;
+}
+
+Params.prototype.random = function () {
+  this.wave_type = rnd(3);
+  if (rnd(1))
+    this.p_base_freq = cube(frnd(2) - 1) + 0.5;
+  else
+    this.p_base_freq = sqr(frnd(1));
+  this.p_freq_limit = 0;
+  this.p_freq_ramp = Math.pow(frnd(2) - 1, 5);
+  if (this.p_base_freq > 0.7 && this.p_freq_ramp > 0.2)
+    this.p_freq_ramp = -this.p_freq_ramp;
+  if (this.p_base_freq < 0.2 && this.p_freq_ramp < -0.05)
+    this.p_freq_ramp = -this.p_freq_ramp;
+  this.p_freq_dramp = Math.pow(frnd(2) - 1, 3);
+  this.p_duty = frnd(2) - 1;
+  this.p_duty_ramp = Math.pow(frnd(2) - 1, 3);
+  this.p_vib_strength = Math.pow(frnd(2) - 1, 3);
+  this.p_vib_speed = rndr(-1, 1);
+  this.p_env_attack = cube(rndr(-1, 1));
+  this.p_env_sustain = sqr(rndr(-1, 1));
+  this.p_env_decay = rndr(-1, 1);
+  this.p_env_punch = Math.pow(frnd(0.8), 2);
+  if (this.p_env_attack + this.p_env_sustain + this.p_env_decay < 0.2) {
+    this.p_env_sustain += 0.2 + frnd(0.3);
+    this.p_env_decay += 0.2 + frnd(0.3);
+  }
+  this.p_lpf_resonance = rndr(-1, 1);
+  this.p_lpf_freq = 1 - Math.pow(frnd(1), 3);
+  this.p_lpf_ramp = Math.pow(frnd(2) - 1, 3);
+  if (this.p_lpf_freq < 0.1 && this.p_lpf_ramp < -0.05)
+    this.p_lpf_ramp = -this.p_lpf_ramp;
+  this.p_hpf_freq = Math.pow(frnd(1), 5);
+  this.p_hpf_ramp = Math.pow(frnd(2) - 1, 5);
+  this.p_pha_offset = Math.pow(frnd(2) - 1, 3);
+  this.p_pha_ramp = Math.pow(frnd(2) - 1, 3);
+  this.p_repeat_speed = frnd(2) - 1;
+  this.p_arp_speed = frnd(2) - 1;
+  this.p_arp_mod = frnd(2) - 1;
+  return this;
+}
+
+Params.prototype.mutate = function () {
+  if (rnd(1)) this.p_base_freq += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_freq_ramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_freq_dramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_duty += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_duty_ramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_vib_strength += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_vib_speed += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_vib_delay += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_env_attack += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_env_sustain += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_env_decay += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_env_punch += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_lpf_resonance += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_lpf_freq += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_lpf_ramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_hpf_freq += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_hpf_ramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_pha_offset += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_pha_ramp += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_repeat_speed += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_arp_speed += frnd(0.1) - 0.05;
+  if (rnd(1)) this.p_arp_mod += frnd(0.1) - 0.05;
+  return this;
+}
+
+sfxr = {};
+
+sfxr.toBuffer = function(synthdef) {
+  return (new SoundEffect(synthdef)).getRawBuffer()["buffer"];
+};
+
+sfxr.toWebAudio = function(synthdef, audiocontext) {
+  var sfx = new SoundEffect(synthdef);
+  var buffer = sfx.getRawBuffer()["normalized"];
+  if (audiocontext) {
+    var buff = audiocontext.createBuffer(1, buffer.length, sfx.sampleRate);
+    var nowBuffering = buff.getChannelData(0);
+    for (var i = 0; i < buffer.length; i++) {
+      nowBuffering[i] = buffer[i];
+    }
+    var proc = audiocontext.createBufferSource();
+    proc.buffer = buff;
+    return proc;
+  }
+};
+
+sfxr.toWave = function(synthdef) {
+  return (new SoundEffect(synthdef)).generate();
+};
+
+sfxr.toAudio = function(synthdef) {
+  return sfxr.toWave(synthdef).getAudio();
+}
+
+sfxr.play = function(synthdef) {
+  return sfxr.toAudio(synthdef).play();
+}
+
+sfxr.b58decode = function(b58encoded) {
+  var decoded = function(S,A){var d=[],b=[],i,j,c,n;for(i in S){j=0,c=A.indexOf(S[i]);if(c<0)return undefined;c||b.length^i?i:b.push(0);while(j in d||c){n=d[j];n=n?n*58+c:c;c=n>>8;d[j]=n%256;j++}}while(j--)b.push(d[j]);return new Uint8Array(b)}(b58encoded,b58alphabet);
+  var result = {};
+  for (var pi in params_order) {
+    var p = params_order[pi];
+    var offset = (pi - 1) * 4 + 1;
+    if (p == "wave_type") {
+      result[p] = decoded[0];
+    } else {
+      var val = (decoded[offset] | (decoded[offset + 1] << 8) | (decoded[offset + 2] << 16) | (decoded[offset + 3] << 24));
+      result[p] = numberToFloat(val);
+    }
+  }
+  return result;
+}
+
+sfxr.b58encode = function(synthdef) {
+  var p = new Params();
+  p.fromJSON(synthdef);
+  return p.toB58();
+}
+
+sfxr.generate = function(algorithm, options) {
+  const p = new Params();
+  const opts = options || {};
+  p.sound_vol = opts["sound_vol"] || 0.25;
+  p.sample_rate = opts["sample_rate"] || 44100;
+  p.sample_size = opts["sample_size"] || 8;
+  return p[algorithm]();
+}
+
+function SoundEffect(ps) {
+  if (typeof(ps) == "string") {
+    var PARAMS = new Params();
+    if (ps.indexOf("#") == 0) {
+      ps = ps.slice(1);
+    }
+    ps = PARAMS.fromB58(ps);
+  }
+  this.init(ps);
+}
+
+SoundEffect.prototype.init = function (ps) {
+  this.parameters = ps;
+  this.initForRepeat();
+
+  this.waveShape = parseInt(ps.wave_type);
+
+  this.fltw = Math.pow(ps.p_lpf_freq, 3) * 0.1;
+  this.enableLowPassFilter = (ps.p_lpf_freq != 1);
+  this.fltw_d = 1 + ps.p_lpf_ramp * 0.0001;
+  this.fltdmp = 5 / (1 + Math.pow(ps.p_lpf_resonance, 2) * 20) *
+    (0.01 + this.fltw);
+  if (this.fltdmp > 0.8) this.fltdmp=0.8;
+  this.flthp = Math.pow(ps.p_hpf_freq, 2) * 0.1;
+  this.flthp_d = 1 + ps.p_hpf_ramp * 0.0003;
+
+  this.vibratoSpeed = Math.pow(ps.p_vib_speed, 2) * 0.01;
+  this.vibratoAmplitude = ps.p_vib_strength * 0.5;
+
+  this.envelopeLength = [
+    Math.floor(ps.p_env_attack * ps.p_env_attack * 100000),
+    Math.floor(ps.p_env_sustain * ps.p_env_sustain * 100000),
+    Math.floor(ps.p_env_decay * ps.p_env_decay * 100000)
+  ];
+  this.envelopePunch = ps.p_env_punch;
+
+  this.flangerOffset = Math.pow(ps.p_pha_offset, 2) * 1020;
+  if (ps.p_pha_offset < 0) this.flangerOffset = -this.flangerOffset;
+  this.flangerOffsetSlide = Math.pow(ps.p_pha_ramp, 2) * 1;
+  if (ps.p_pha_ramp < 0) this.flangerOffsetSlide = -this.flangerOffsetSlide;
+
+  this.repeatTime = Math.floor(Math.pow(1 - ps.p_repeat_speed, 2) * 20000
+                               + 32);
+  if (ps.p_repeat_speed === 0)
+    this.repeatTime = 0;
+
+  this.gain = Math.exp(ps.sound_vol) - 1;
+
+  this.sampleRate = ps.sample_rate;
+  this.bitsPerChannel = ps.sample_size;
+}
+
+SoundEffect.prototype.initForRepeat = function() {
+  var ps = this.parameters;
+  this.elapsedSinceRepeat = 0;
+
+  this.period = 100 / (ps.p_base_freq * ps.p_base_freq + 0.001);
+  this.periodMax = 100 / (ps.p_freq_limit * ps.p_freq_limit + 0.001);
+  this.enableFrequencyCutoff = (ps.p_freq_limit > 0);
+  this.periodMult = 1 - Math.pow(ps.p_freq_ramp, 3) * 0.01;
+  this.periodMultSlide = -Math.pow(ps.p_freq_dramp, 3) * 0.000001;
+
+  this.dutyCycle = 0.5 - ps.p_duty * 0.5;
+  this.dutyCycleSlide = -ps.p_duty_ramp * 0.00005;
+
+  if (ps.p_arp_mod >= 0)
+    this.arpeggioMultiplier = 1 - Math.pow(ps.p_arp_mod, 2) * .9;
+  else
+    this.arpeggioMultiplier = 1 + Math.pow(ps.p_arp_mod, 2) * 10;
+  this.arpeggioTime = Math.floor(Math.pow(1 - ps.p_arp_speed, 2) * 20000 + 32);
+  if (ps.p_arp_speed === 1)
+    this.arpeggioTime = 0;
+}
+
+SoundEffect.prototype.getRawBuffer = function () {
+  var fltp = 0;
+  var fltdp = 0;
+  var fltphp = 0;
+
+  var noise_buffer = Array(32);
+  for (var i = 0; i < 32; ++i)
+    noise_buffer[i] = Math.random() * 2 - 1;
+
+  var envelopeStage = 0;
+  var envelopeElapsed = 0;
+
+  var vibratoPhase = 0;
+
+  var phase = 0;
+  var ipp = 0;
+  var flanger_buffer = Array(1024);
+  for (var i = 0; i < 1024; ++i)
+    flanger_buffer[i] = 0;
+
+  var num_clipped = 0;
+
+  var buffer = [];
+  var normalized = [];
+
+  var sample_sum = 0;
+  var num_summed = 0;
+  var summands = Math.floor(44100 / this.sampleRate);
+
+  for(var t = 0; ; ++t) {
+
+    if (this.repeatTime != 0 && ++this.elapsedSinceRepeat >= this.repeatTime)
+      this.initForRepeat();
+
+    if(this.arpeggioTime != 0 && t >= this.arpeggioTime) {
+      this.arpeggioTime = 0;
+      this.period *= this.arpeggioMultiplier;
+    }
+
+    this.periodMult += this.periodMultSlide;
+    this.period *= this.periodMult;
+    if(this.period > this.periodMax) {
+      this.period = this.periodMax;
+      if (this.enableFrequencyCutoff)
+        break;
+    }
+
+    var rfperiod = this.period;
+    if (this.vibratoAmplitude > 0) {
+      vibratoPhase += this.vibratoSpeed;
+      rfperiod = this.period * (1 + Math.sin(vibratoPhase) * this.vibratoAmplitude);
+    }
+    var iperiod = Math.floor(rfperiod);
+    if (iperiod < OVERSAMPLING) iperiod = OVERSAMPLING;
+
+    this.dutyCycle += this.dutyCycleSlide;
+    if (this.dutyCycle < 0) this.dutyCycle = 0;
+    if (this.dutyCycle > 0.5) this.dutyCycle = 0.5;
+
+    if (++envelopeElapsed > this.envelopeLength[envelopeStage]) {
+      envelopeElapsed = 0;
+      if (++envelopeStage > 2)
+        break;
+    }
+    var env_vol;
+    var envf = envelopeElapsed / this.envelopeLength[envelopeStage];
+    if (envelopeStage === 0) {
+      env_vol = envf;
+    } else if (envelopeStage === 1) {
+      env_vol = 1 + (1 - envf) * 2 * this.envelopePunch;
+    } else {
+      env_vol = 1 - envf;
+    }
+
+    this.flangerOffset += this.flangerOffsetSlide;
+    var iphase = Math.abs(Math.floor(this.flangerOffset));
+    if (iphase > 1023) iphase = 1023;
+
+    if (this.flthp_d != 0) {
+      this.flthp *= this.flthp_d;
+      if (this.flthp < 0.00001)
+        this.flthp = 0.00001;
+      if (this.flthp > 0.1)
+        this.flthp = 0.1;
+    }
+
+    var sample = 0;
+    for (var si = 0; si < OVERSAMPLING; ++si) {
+      var sub_sample = 0;
+      phase++;
+      if (phase >= iperiod) {
+        phase %= iperiod;
+        if (this.waveShape === NOISE)
+          for(var i = 0; i < 32; ++i)
+            noise_buffer[i] = Math.random() * 2 - 1;
+      }
+
+      var fp = phase / iperiod;
+      if (this.waveShape === SQUARE) {
+        if (fp < this.dutyCycle)
+          sub_sample=0.5;
+        else
+          sub_sample=-0.5;
+      } else if (this.waveShape === SAWTOOTH) {
+        if (fp < this.dutyCycle)
+          sub_sample = -1 + 2 * fp/this.dutyCycle;
+        else
+          sub_sample = 1 - 2 * (fp-this.dutyCycle)/(1-this.dutyCycle);
+      } else if (this.waveShape === SINE) {
+        sub_sample = Math.sin(fp * 2 * Math.PI);
+      } else if (this.waveShape === NOISE) {
+        sub_sample = noise_buffer[Math.floor(phase * 32 / iperiod)];
+      } else {
+        throw "ERROR: Bad wave type: " + this.waveShape;
+      }
+
+      var pp = fltp;
+      this.fltw *= this.fltw_d;
+      if (this.fltw < 0) this.fltw = 0;
+      if (this.fltw > 0.1) this.fltw = 0.1;
+      if (this.enableLowPassFilter) {
+        fltdp += (sub_sample - fltp) * this.fltw;
+        fltdp -= fltdp * this.fltdmp;
+      } else {
+        fltp = sub_sample;
+        fltdp = 0;
+      }
+      fltp += fltdp;
+
+      fltphp += fltp - pp;
+      fltphp -= fltphp * this.flthp;
+      sub_sample = fltphp;
+
+      flanger_buffer[ipp & 1023] = sub_sample;
+      sub_sample += flanger_buffer[(ipp - iphase + 1024) & 1023];
+      ipp = (ipp + 1) & 1023;
+
+      sample += sub_sample * env_vol;
+    }
+
+    sample_sum += sample;
+    if (++num_summed >= summands) {
+      num_summed = 0;
+      sample = sample_sum / summands;
+      sample_sum = 0;
+    } else {
+      continue;
+    }
+
+    sample = sample / OVERSAMPLING * masterVolume;
+    sample *= this.gain;
+
+    normalized.push(sample);
+
+    if (this.bitsPerChannel === 8) {
+      sample = Math.floor((sample + 1) * 128);
+      if (sample > 255) {
+        sample = 255;
+        ++num_clipped;
+      } else if (sample < 0) {
+        sample = 0;
+        ++num_clipped;
+      }
+      buffer.push(sample);
+    } else {
+      sample = Math.floor(sample * (1<<15));
+      if (sample >= (1<<15)) {
+        sample = (1 << 15)-1;
+        ++num_clipped;
+      } else if (sample < -(1<<15)) {
+        sample = -(1 << 15);
+        ++num_clipped;
+      }
+      buffer.push(sample & 0xFF);
+      buffer.push((sample >> 8) & 0xFF);
+    }
+  }
+
+  return {
+    "buffer": buffer,
+    "normalized": normalized,
+    "clipped": num_clipped,
+  }
+}
+
+SoundEffect.prototype.generate = function() {
+  var rendered = this.getRawBuffer();
+  var wave = new RIFFWAVE();
+  wave.header.sampleRate = this.sampleRate;
+  wave.header.bitsPerSample = this.bitsPerChannel;
+  wave.Make(rendered.buffer);
+  wave.clipping = rendered.clipped;
+  wave.buffer = rendered.normalized;
+  wave.getAudio = _sfxr_getAudioFn(wave);
+  return wave;
+}
+
+var _actx = null;
+var _sfxr_getAudioFn = function(wave) {
+  return function() {
+    var actx = null;
+    if (!_actx) {
+      if ('AudioContext' in window) {
+        _actx = new AudioContext();
+      } else if ('webkitAudioContext' in window) {
+        _actx = new webkitAudioContext();
+      }
+    }
+    actx = _actx;
+
+    if (actx) {
+      var buff = actx.createBuffer(1, wave.buffer.length, wave.header.sampleRate);
+      var nowBuffering = buff.getChannelData(0);
+      for (var i=0;i<wave.buffer.length;i++) {
+        nowBuffering[i] = wave.buffer[i];
+      }
+      var volume = 1.0;
+      var obj = {
+        "channels": [],
+        "setVolume": function(v) { volume = v; return obj; },
+        "play": function() {
+          var proc = actx.createBufferSource();
+          proc.buffer = buff;
+          var gainNode = actx.createGain()
+          gainNode.gain.value = volume;
+          gainNode.connect(actx.destination)
+          proc.connect(gainNode);
+          if (proc["start"]) {
+            proc.start();
+          } else if (proc["noteOn"]) {
+            proc.noteOn(0);
+          }
+          this.channels.push(proc);
+          return proc;
+        }
+      };
+      return obj;
+    } else {
+      var audio = new Audio();
+      audio.src = wave.dataURI;
+      return audio;
+    }
+  };
+};
+
+var sliders = {
+  p_env_attack:  function (v) { return v * v * 100000.0 },
+  p_env_sustain: function (v) { return v * v * 100000.0 },
+  p_env_punch:   function (v) { return v },
+  p_env_decay:   function (v) { return v * v * 100000.0 },
+  p_base_freq:  function (v) { return 8 * 44100 * (v * v + 0.001) / 100 },
+  p_freq_limit: function (v) { return 8 * 44100 * (v * v + 0.001) / 100 },
+  p_freq_ramp:  function (v) { return 1.0 - Math.pow(v, 3.0) * 0.01 },
+  p_freq_dramp: function (v) { return -Math.pow(v, 3.0) * 0.000001 },
+  p_vib_speed:    function (v) { return Math.pow(v, 2.0) * 0.01 },
+  p_vib_strength: function (v) { return v * 0.5 },
+  p_arp_mod:   function (v) {
+    return v >= 0 ? 1.0 - Math.pow(v, 2) * 0.9 : 1.0 + Math.pow(v, 2) * 10; },
+  p_arp_speed: function (v) { return (v === 1.0) ? 0 :
+                              Math.floor(Math.pow(1.0 - v, 2.0) * 20000 + 32)},
+  p_duty:      function (v) { return 0.5 - v * 0.5; },
+  p_duty_ramp: function (v) { return -v * 0.00005 },
+  p_repeat_speed: function (v) { return (v === 0) ? 0 :
+                                 Math.floor(Math.pow(1-v, 2) * 20000) + 32 },
+  p_pha_offset: function (v) { return (v < 0 ? -1 : 1) * Math.pow(v,2)*1020 },
+  p_pha_ramp:   function (v) { return (v < 0 ? -1 : 1) * Math.pow(v,2) },
+  p_lpf_freq:   function (v) { return Math.pow(v, 3) * 0.1 },
+  p_lpf_ramp:   function (v) { return 1.0 + v * 0.0001 },
+  p_lpf_resonance: function (v) { return 5.0 / (1.0 + Math.pow(v, 2) * 20) },
+  p_hpf_freq: function (v) { return Math.pow(v, 2) * 0.1 },
+  p_hpf_ramp: function (v) { return 1.0 + v * 0.0003 },
+  sound_vol: function (v) { return Math.exp(v) - 1; }
+};
+
+(function (root, factory) {
+  var globalRoot = root || (typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : {}));
+  if(typeof define === "function" && define.amd) {
+    define(["./riffwave"], function(RIFFWAVE){
+      return (globalRoot.jsfxr = factory(RIFFWAVE));
+    });
+  } else if(typeof module === "object" && module.exports) {
+    var RIFFWAVE = require("./riffwave.js");
+    module.exports = (globalRoot.jsfxr = factory(RIFFWAVE));
+  } else {
+    globalRoot.jsfxr = factory(globalRoot.RIFFWAVE);
+  }
+}(this, function(RIFFWAVE) {
+  return {
+    "sfxr": sfxr,
+    "parameters": {
+      "order": params_order,
+      "signed": params_signed,
+    },
+    "Params": Params,
+    "SoundEffect": SoundEffect,
+    "waveforms": {
+      "SQUARE": SQUARE,
+      "SAWTOOTH": SAWTOOTH,
+      "SINE": SINE,
+      "NOISE": NOISE
+    }
+  };
+}));
+
+
+// ============================================================================
+// engine/signal-bus.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class SignalBus {
+  constructor() {
+    this._listeners = new Map();
+  }
+
+  emit(name, payload) {
+    const handlers = this._listeners.get(name);
+    if (!handlers) return;
+    for (const handler of [...handlers]) {
+      handler(payload);
+    }
+  }
+
+  on(name, handler) {
+    if (!this._listeners.has(name)) {
+      this._listeners.set(name, new Set());
+    }
+    this._listeners.get(name).add(handler);
+    return () => this.off(name, handler);
+  }
+
+  off(name, handler) {
+    const handlers = this._listeners.get(name);
+    if (!handlers) return;
+    handlers.delete(handler);
+    if (handlers.size === 0) {
+      this._listeners.delete(name);
+    }
+  }
+}
+
+Engine.SignalBus = SignalBus;
+Engine.signals = new SignalBus();
+
+
+// ============================================================================
+// engine/input.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class Input {
+  constructor(canvas = null) {
+    this._down = new Set();
+    this._justPressed = new Set();
+    this._justReleased = new Set();
+    this._pendingPressed = new Set();
+    this._pendingReleased = new Set();
+
+    this.mouse = {
+      x: 0,
+      y: 0,
+      left: false,
+      right: false
+    };
+
+    this._canvas = canvas;
+
+    window.addEventListener('keydown', (e) => {
+      if (!this._down.has(e.key)) {
+        this._pendingPressed.add(e.key);
+      }
+      this._down.add(e.key);
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (this._down.has(e.key)) {
+        this._pendingReleased.add(e.key);
+      }
+      this._down.delete(e.key);
+    });
+
+    const moveTarget = canvas || window;
+    moveTarget.addEventListener('mousemove', (e) => {
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        this.mouse.x = (e.clientX - rect.left) * scaleX;
+        this.mouse.y = (e.clientY - rect.top) * scaleY;
+      } else {
+        this.mouse.x = e.clientX;
+        this.mouse.y = e.clientY;
+      }
+    });
+
+    const downTarget = canvas || window;
+    downTarget.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.mouse.left = true;
+      if (e.button === 2) this.mouse.right = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouse.left = false;
+      if (e.button === 2) this.mouse.right = false;
+    });
+  }
+
+  isDown(key) {
+    return this._down.has(key);
+  }
+
+  wasJustPressed(key) {
+    return this._justPressed.has(key);
+  }
+
+  wasJustReleased(key) {
+    return this._justReleased.has(key);
+  }
+
+  update() {
+    this._justPressed = this._pendingPressed;
+    this._justReleased = this._pendingReleased;
+    this._pendingPressed = new Set();
+    this._pendingReleased = new Set();
+  }
+}
+
+Engine.Input = Input;
+
+
+// ============================================================================
+// engine/script.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class Script {
+  constructor(host) {
+    this.host = host;
+  }
+
+  on_enter() {}
+  update(_dt) {}
+  draw(_ctx) {}
+  on_exit() {}
+}
+
+Engine.Script = Script;
+
+
+// ============================================================================
+// engine/game-object.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class GameObject {
+  constructor(x = 0, y = 0) {
+    this.x = x;
+    this.y = y;
+    this.rotation = 0;
+    this.scale = 1;
+    this.scripts = [];
+  }
+
+  attach(script) {
+    this.scripts.push(script);
+    if (typeof script.on_enter === 'function') {
+      script.on_enter();
+    }
+    return script;
+  }
+
+  detach(script) {
+    const i = this.scripts.indexOf(script);
+    if (i === -1) return;
+    this.scripts.splice(i, 1);
+    if (typeof script.on_exit === 'function') {
+      script.on_exit();
+    }
+  }
+
+  update(dt) {
+    for (const s of this.scripts) {
+      if (typeof s.update === 'function') s.update(dt);
+    }
+  }
+
+  draw(ctx) {
+    for (const s of this.scripts) {
+      if (typeof s.draw === 'function') s.draw(ctx);
+    }
+  }
+}
+
+Engine.GameObject = GameObject;
+
+
+// ============================================================================
+// engine/scene.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class Scene {
+  constructor() {
+    this.objects = [];
+  }
+
+  enter() {}
+  exit() {}
+
+  add(obj) {
+    this.objects.push(obj);
+    return obj;
+  }
+
+  remove(obj) {
+    const i = this.objects.indexOf(obj);
+    if (i !== -1) this.objects.splice(i, 1);
+  }
+
+  update(dt) {
+    for (const obj of [...this.objects]) {
+      obj.update(dt);
+    }
+    this._collisionPass();
+  }
+
+  draw(ctx) {
+    for (const obj of this.objects) {
+      ctx.save();
+      ctx.translate(obj.x, obj.y);
+      ctx.rotate(obj.rotation);
+      ctx.scale(obj.scale, obj.scale);
+      obj.draw(ctx);
+      ctx.restore();
+    }
+  }
+
+  _collisionPass() {
+    const colliders = [];
+    for (const obj of this.objects) {
+      for (const s of obj.scripts) {
+        if (s.isCollider) {
+          colliders.push(s);
+        }
+      }
+    }
+    for (let i = 0; i < colliders.length; i++) {
+      const a = colliders[i];
+      const aBox = a.getAabb();
+      for (let j = i + 1; j < colliders.length; j++) {
+        const b = colliders[j];
+        const bBox = b.getAabb();
+        if (aBox.x < bBox.x + bBox.w && aBox.x + aBox.w > bBox.x &&
+            aBox.y < bBox.y + bBox.h && aBox.y + aBox.h > bBox.y) {
+          a.onCollide(b);
+          b.onCollide(a);
+        }
+      }
+    }
+  }
+}
+
+Engine.Scene = Scene;
+
+
+// ============================================================================
+// engine/audio.js
+// ============================================================================
+
+var Engine = Engine || {};
+class EngineAudio {
+  constructor() { this._sounds=new Map(); this._cache=new Map(); this._volume=0.5; this._muted=false; }
+  register(name, paramsOrPreset) {
+    const params = typeof paramsOrPreset==='string' ? jsfxr.sfxr.generate(paramsOrPreset) : paramsOrPreset;
+    this._sounds.set(name, params); this._cache.delete(name);
+  }
+  play(name) {
+    if (this._muted) return;
+    const params = this._sounds.get(name);
+    if (!params) { console.warn(`Engine.audio: unknown sound '${name}'`); return; }
+    let audio = this._cache.get(name);
+    if (!audio) { audio = jsfxr.sfxr.toAudio(params); this._cache.set(name, audio); }
+    audio.setVolume(this._volume); audio.play();
+  }
+  setVolume(v) { this._volume = Math.max(0, Math.min(1, v)); }
+  getVolume()  { return this._volume; }
+  setMuted(b)  { this._muted = !!b; }
+  isMuted()    { return this._muted; }
+}
+Engine.Audio = EngineAudio;
+
+
+// ============================================================================
+// engine/storage.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class EngineStorage {
+  constructor(namespace) {
+    this._namespace = namespace || '';
+    this._prefix = this._namespace ? this._namespace + ':' : '';
+    this._available = this._detectAvailable();
+    this._fallback = this._available ? null : new Map();
+  }
+
+  _detectAvailable() {
+    try {
+      const probe = '__engine_storage_probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  isAvailable() { return this._available; }
+  getNamespace() { return this._namespace; }
+  _fullKey(key) { return this._prefix + key; }
+
+  save(key, value) {
+    if (value === undefined) {
+      console.warn(`Engine.storage.save: refusing to save undefined for key '${key}'. Use clear(key) instead.`);
+      return false;
+    }
+    let serialized;
+    try {
+      serialized = JSON.stringify(value);
+    } catch (e) {
+      console.warn(`Engine.storage.save: cannot serialize value for key '${key}':`, e);
+      return false;
+    }
+    const fk = this._fullKey(key);
+    if (!this._available) {
+      this._fallback.set(fk, serialized);
+      return true;
+    }
+    try {
+      window.localStorage.setItem(fk, serialized);
+      return true;
+    } catch (e) {
+      console.warn(`Engine.storage.save: localStorage.setItem failed for key '${key}':`, e);
+      return false;
+    }
+  }
+
+  load(key, defaultValue = null) {
+    const fk = this._fullKey(key);
+    let raw;
+    if (!this._available) {
+      raw = this._fallback.has(fk) ? this._fallback.get(fk) : null;
+    } else {
+      raw = window.localStorage.getItem(fk);
+    }
+    if (raw === null) return defaultValue;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.warn(`Engine.storage.load: cannot parse stored value for key '${key}':`, e);
+      return defaultValue;
+    }
+  }
+
+  has(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) return this._fallback.has(fk);
+    return window.localStorage.getItem(fk) !== null;
+  }
+
+  clear(key) {
+    const fk = this._fullKey(key);
+    if (!this._available) { this._fallback.delete(fk); return; }
+    window.localStorage.removeItem(fk);
+  }
+
+  clearAll() {
+    if (!this._available) {
+      if (!this._prefix) { this._fallback.clear(); return; }
+      for (const k of [...this._fallback.keys()]) {
+        if (k.startsWith(this._prefix)) this._fallback.delete(k);
+      }
+      return;
+    }
+    if (!this._prefix) {
+      window.localStorage.clear();
+      return;
+    }
+    const toRemove = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(this._prefix)) toRemove.push(k);
+    }
+    for (const k of toRemove) window.localStorage.removeItem(k);
+  }
+
+  keys() {
+    const out = [];
+    if (!this._available) {
+      for (const k of this._fallback.keys()) {
+        if (!this._prefix) { out.push(k); continue; }
+        if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+      }
+      return out;
+    }
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k === null) continue;
+      if (!this._prefix) { out.push(k); continue; }
+      if (k.startsWith(this._prefix)) out.push(k.slice(this._prefix.length));
+    }
+    return out;
+  }
+}
+
+Engine.Storage = EngineStorage;
+
+
+// ============================================================================
+// engine/game.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class Game {
+  constructor(canvas, options = {}) {
+    if (!canvas || typeof canvas.getContext !== 'function') {
+      throw new Error('Game requires a canvas element.');
+    }
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.gameName = options.gameName || '';
+    this.currentScene = null;
+    this._pendingScene = null;
+    this._lastFrameTime = 0;
+    this._animationHandle = null;
+    this._running = false;
+
+    Engine.input = new Engine.Input(canvas);
+    Engine.audio = new Engine.Audio();
+    Engine.storage = new Engine.Storage(this.gameName);
+  }
+
+  start() {
+    if (this._running) return;
+    this._running = true;
+    this._lastFrameTime = performance.now();
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+
+  stop() {
+    this._running = false;
+    if (this._animationHandle !== null) {
+      cancelAnimationFrame(this._animationHandle);
+      this._animationHandle = null;
+    }
+  }
+
+  setScene(scene) {
+    this._pendingScene = scene;
+  }
+
+  _frame(now) {
+    if (!this._running) return;
+
+    let dt = (now - this._lastFrameTime) / 1000;
+    if (dt > 0.1) dt = 0.1;
+    this._lastFrameTime = now;
+
+    if (this._pendingScene) {
+      if (this.currentScene) this.currentScene.exit();
+      this.currentScene = this._pendingScene;
+      this._pendingScene = null;
+      this.currentScene.enter();
+    }
+
+    Engine.input.update();
+
+    if (this.currentScene) {
+      this.currentScene.update(dt);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.currentScene.draw(this.ctx);
+    }
+
+    this._animationHandle = requestAnimationFrame((t) => this._frame(t));
+  }
+}
+
+Engine.Game = Game;
+
+
+// ============================================================================
+// engine/narrative.js
+// ============================================================================
+
+var Engine = Engine || {};
+
+class Narrative {
+  constructor(source, options = {}) {
+    if (typeof inkjs === 'undefined') {
+      throw new Error(
+        'Engine.Narrative requires inkjs to be loaded. Include ' +
+        'engine/lib/inkjs.js before the engine bundle in your build. See ADR-0018.'
+      );
+    }
+    if (options.compiled) {
+      this._story = new inkjs.Story(source);
+    } else {
+      this._story = new inkjs.Compiler(source).Compile();
+    }
+  }
+
+  // Advance the story, collecting every line emitted until the next choice
+  // point or story end. Returns an array of { text, tags } objects.
+  continue() {
+    const lines = [];
+    while (this._story.canContinue) {
+      const raw = this._story.Continue();
+      const text = (typeof raw === 'string' ? raw : '').replace(/\n$/, '');
+      const tags = this._story.currentTags ? [...this._story.currentTags] : [];
+      lines.push({ text, tags });
+    }
+    return lines;
+  }
+
+  // Available choices at the current story point, or [] if none.
+  getChoices() {
+    return this._story.currentChoices.map((c) => ({
+      index: c.index,
+      text: c.text,
+      tags: c.tags ? [...c.tags] : []
+    }));
+  }
+
+  // Select a choice by its index. After this, the story is ready for another
+  // continue() call.
+  choose(index) {
+    this._story.ChooseChoiceIndex(index);
+  }
+
+  // Read an ink variable by name. Returns undefined if not declared.
+  getVar(name) {
+    return this._story.variablesState[name];
+  }
+
+  // Write an ink variable. The variable must be declared in the ink source
+  // (with VAR) for the write to have effect.
+  setVar(name, value) {
+    this._story.variablesState[name] = value;
+  }
+
+  // Bind a JS function that ink can invoke via an EXTERNAL declaration.
+  // The ink script must declare it as: EXTERNAL fn_name(arg1, arg2)
+  bindExternal(name, fn) {
+    this._story.BindExternalFunction(name, fn);
+  }
+
+  // Register a callback that fires when the named ink variable changes.
+  // The callback is invoked with the new value.
+  observe(name, fn) {
+    this._story.ObserveVariable(name, (_varName, value) => fn(value));
+  }
+
+  // Jump to a named knot or stitch. Path is a dot-separated string like
+  // 'sector_one' or 'sector_one.shop_intro'.
+  goTo(path) {
+    this._story.ChoosePathString(path);
+  }
+
+  // Serialize narrative state to a JSON string suitable for storing via
+  // Engine.storage alongside other game state.
+  saveState() {
+    return this._story.state.toJson();
+  }
+
+  // Restore state from a JSON string previously returned by saveState().
+  loadState(json) {
+    this._story.state.LoadJson(json);
+  }
+
+  // True when the story has nothing more to emit and offers no choices.
+  get hasEnded() {
+    return !this._story.canContinue && this._story.currentChoices.length === 0;
+  }
+
+  // Underlying inkjs Story instance. Exposed for advanced uses where the
+  // wrapper methods do not cover the required operation.
+  get story() {
+    return this._story;
+  }
+}
+
+Engine.Narrative = Narrative;
+
+/* ==== scripts/bootstrap.js ==== */
+// ============================================================================
+// scripts/bootstrap.js
+// ============================================================================
+//
+// bootstrapGame(options) - canonical game bootstrap helper.
+//
+// Consolidates the boilerplate that every build/<game>.html's <script> tail
+// currently repeats: viewport-aware canvas sizing per ADR-0017, touch
+// capability detection, optional context-menu suppression (for right-click
+// games), Engine.Game construction with optional gameName for namespaced
+// storage, initial scene set via a factory, and game start.
+//
+// Depends on:
+//   Engine.Game (engine/game.js). The engine bundle must be loaded before
+//   this script in the build concatenation order.
+//
+// Depended on by:
+//   Game build bootstrap snippets. Replaces the inline IIFE that previously
+//   appeared at the end of each build/<game>.html. Adoption is per-build:
+//   existing builds continue to work with their inline bootstrap until each
+//   is naturally regenerated. Drift v1 is the planned first build to adopt
+//   the helper from the start; existing games migrate when next touched.
+//
+// Usage (Minesweeper-style, current inline form for comparison):
+//   (function () {
+//     const canvas = document.getElementById('game');
+//     const preset = { w: 900, h: 600 };
+//     canvas.width = preset.w; canvas.height = preset.h;
+//     // fitToViewport, resize listener, canvas.oncontextmenu, etc.
+//     const game = new Engine.Game(canvas, { gameName: 'minesweeper' });
+//     game.setScene(new MinesweeperMenuScene(game));
+//     game.start();
+//   })();
+//
+// Equivalent with bootstrapGame:
+//   bootstrapGame({
+//     gameName: 'minesweeper',
+//     presets: { regular: { w: 900, h: 600 } },
+//     initialScene: function (game) { return new MinesweeperMenuScene(game); },
+//     suppressContextMenu: true,
+//   });
+//
+// Options:
+//   canvasId          string. ID of canvas element. Default 'game'.
+//   canvas            DOM element. Overrides canvasId if both provided.
+//   gameName          string. Passed to Engine.Game for storage namespacing.
+//                     Default '' (no namespace).
+//   presets           { regular: {w, h}, compact?: {w, h} }. Required.
+//                     If compact is omitted, regular is always used (the
+//                     intentional letterbox-on-portrait path per ADR-0017).
+//   initialScene      (game) => Scene. Factory required because the Game
+//                     instance must exist before the initial Scene's
+//                     constructor argument can be passed.
+//   suppressContextMenu  bool. Default false. true disables the canvas's
+//                     right-click context menu (for games that read
+//                     Engine.input.mouse.right; see Minesweeper).
+//
+// Returns:
+//   { game, preset, presetName, isTouch }
+//     game         the constructed Engine.Game (already started)
+//     preset       the chosen preset object { w, h }
+//     presetName   'regular' or 'compact'
+//     isTouch      bool. true if touch capability detected per ADR-0017.
+//                  Scenes can use this to enlarge hit-target minimums.
+//
+// Throws if the canvas element is not found, presets.regular is missing, or
+// initialScene is not a function. Errors are explicit and actionable.
+//
+// Preset selection:
+//   When both regular and compact are defined, picks whichever aspect ratio
+//   is closer (in log space) to the current viewport's. This matches the
+//   reference snippet in docs/ARCHITECTURE.md "Logical canvas and viewport
+//   bootstrap" and ADR-0017.
+// ============================================================================
+
+function bootstrapGame(options) {
+  const opts = options || {};
+
+  const canvas = opts.canvas || document.getElementById(opts.canvasId || 'game');
+  if (!canvas || typeof canvas.getContext !== 'function') {
+    throw new Error(
+      "bootstrapGame: canvas element not found (looked for id '" +
+      (opts.canvasId || 'game') + "'). Pass options.canvas or options.canvasId."
+    );
+  }
+
+  const presets = opts.presets;
+  if (!presets || !presets.regular) {
+    throw new Error('bootstrapGame: options.presets.regular is required (e.g. { regular: { w: 900, h: 600 } }).');
+  }
+
+  if (typeof opts.initialScene !== 'function') {
+    throw new Error('bootstrapGame: options.initialScene must be a factory function (game) => sceneInstance.');
+  }
+
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+  function pickPreset() {
+    if (!presets.compact) return { name: 'regular', preset: presets.regular };
+    const va = window.innerWidth / window.innerHeight;
+    const ra = presets.regular.w / presets.regular.h;
+    const ca = presets.compact.w / presets.compact.h;
+    const useCompact = Math.abs(Math.log(va / ca)) < Math.abs(Math.log(va / ra));
+    return useCompact
+      ? { name: 'compact', preset: presets.compact }
+      : { name: 'regular', preset: presets.regular };
+  }
+
+  const chosen = pickPreset();
+  const preset = chosen.preset;
+  canvas.width = preset.w;
+  canvas.height = preset.h;
+
+  function fitToViewport() {
+    const s = Math.min(window.innerWidth / preset.w, window.innerHeight / preset.h);
+    canvas.style.width = (preset.w * s) + 'px';
+    canvas.style.height = (preset.h * s) + 'px';
+  }
+  fitToViewport();
+  window.addEventListener('resize', fitToViewport);
+
+  if (opts.suppressContextMenu) {
+    canvas.oncontextmenu = function (e) { e.preventDefault(); };
+  }
+
+  const game = new Engine.Game(canvas, { gameName: opts.gameName || '' });
+  game.setScene(opts.initialScene(game));
+  game.start();
+
+  return { game: game, preset: preset, presetName: chosen.name, isTouch: isTouch };
+}
+
+/* ==== scripts/pause-overlay.js ==== */
+// scripts/pause-overlay.js
+// Reusable pause overlay utility. Not a Script subclass -- a plain class that
+// any scene owns and delegates to. Lives in scripts/ as the closest available
+// folder; a utils/ folder may be warranted if more non-Script utilities appear.
+//
+// Usage in a scene:
+//   this._pause = new PauseOverlay(game, {
+//     onRestart: () => game.setScene(new MatchScene(game)),  // optional
+//     onQuit:    () => game.setScene(new Menu(game)),        // optional
+//   });
+//   In update(dt): this._pause.update(dt); if (this._pause.isPaused()) return;
+//   In draw(ctx): /* game draw */ this._pause.draw(ctx); // last, on top
+//
+// ESC toggles pause. Row layout (rows present only if their callback is provided):
+//   RESUME
+//   AUDIO    (volume + mute)
+//   RESTART  (only if onRestart)
+//   QUIT     (only if onQuit)
+//
+// Controls when paused:
+//   Up/Down       navigate rows
+//   Left/Right    adjust volume when on AUDIO row
+//   M             toggle mute when on AUDIO row
+//   Space/Enter   activate selected row
+//   Escape        resume
+//
+// Depends on: Engine.input, Engine.audio.
+// Used by: SurvivorsMatchScene, HTTMatchScene, and any future game scene.
+
+class PauseOverlay {
+  constructor(game, options = {}) {
+    this._game      = game;
+    this._paused    = false;
+    this._onRestart = options.onRestart ?? null;
+    this._onQuit    = options.onQuit    ?? null;
+    this._cursor    = 0;
+    this._rows      = this._buildRows();
+  }
+
+  /** Build the row layout based on which callbacks were provided. Each row is
+   * { kind, label }. The 'volume' row's label is regenerated at draw time. */
+  _buildRows() {
+    const rows = [
+      { kind: 'resume', label: 'RESUME' },
+      { kind: 'volume', label: '' }, // regenerated dynamically
+    ];
+    if (this._onRestart) rows.push({ kind: 'restart', label: 'RESTART' });
+    if (this._onQuit)    rows.push({ kind: 'quit',    label: 'QUIT TO MENU' });
+    return rows;
+  }
+
+  toggle() { this._paused = !this._paused; if (!this._paused) this._cursor = 0; }
+  isPaused() { return this._paused; }
+
+  update(dt) {
+    if (Engine.input.wasJustPressed('Escape')) { this.toggle(); return; }
+    if (!this._paused) return;
+
+    const n = this._rows.length;
+    if (Engine.input.wasJustPressed('ArrowUp'))
+      this._cursor = (this._cursor - 1 + n) % n;
+    if (Engine.input.wasJustPressed('ArrowDown'))
+      this._cursor = (this._cursor + 1) % n;
+
+    const row = this._rows[this._cursor];
+
+    if (row.kind === 'volume') {
+      if (Engine.input.wasJustPressed('ArrowLeft'))
+        Engine.audio.setVolume(+(Math.max(0, Engine.audio.getVolume() - 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('ArrowRight'))
+        Engine.audio.setVolume(+(Math.min(1, Engine.audio.getVolume() + 0.1)).toFixed(1));
+      if (Engine.input.wasJustPressed('m') || Engine.input.wasJustPressed('M'))
+        Engine.audio.setMuted(!Engine.audio.isMuted());
+    }
+
+    if (Engine.input.wasJustPressed('Enter') || Engine.input.wasJustPressed(' ')) {
+      if (row.kind === 'resume')  { this.toggle(); }
+      else if (row.kind === 'restart' && this._onRestart) { this._paused = false; this._onRestart(); }
+      else if (row.kind === 'quit'    && this._onQuit)    { this._paused = false; this._onQuit(); }
+    }
+  }
+
+  draw(ctx) {
+    if (!this._paused) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Panel height scales with row count so 4-row layouts don't crowd.
+    const n  = this._rows.length;
+    const pw = 420;
+    const ph = 180 + n * 50;
+    const px = W / 2 - pw / 2, py = H / 2 - ph / 2 - 16;
+    ctx.fillStyle = '#111827'; ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph);
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px monospace';
+    ctx.fillText('PAUSED', W / 2, py + 44);
+
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px + 20, py + 72); ctx.lineTo(px + pw - 20, py + 72); ctx.stroke();
+
+    const muted = Engine.audio.isMuted();
+    const vol   = Math.round(Engine.audio.getVolume() * 10);
+    const volStr = muted ? 'AUDIO  [MUTED]' : 'AUDIO  [' + '|'.repeat(vol) + ' '.repeat(10 - vol) + '] ' + vol + '/10';
+
+    for (let i = 0; i < n; i++) {
+      const row = this._rows[i];
+      const ry  = py + 106 + i * 50, sel = i === this._cursor;
+      if (sel) { ctx.fillStyle = 'rgba(241,196,15,0.10)'; ctx.fillRect(px + 12, ry - 20, pw - 24, 40); }
+      ctx.fillStyle = sel ? '#f1c40f' : '#9ca3af';
+      ctx.font      = sel ? 'bold 20px monospace' : '18px monospace';
+      const label = row.kind === 'volume' ? volStr : row.label;
+      ctx.fillText(label, W / 2, ry);
+    }
+
+    ctx.fillStyle = '#4b5563'; ctx.font = '11px monospace';
+    ctx.fillText('UP/DOWN navigate   LEFT/RIGHT volume   M mute   ESC resume', W / 2, py + ph - 16);
+    ctx.restore();
+  }
+}
+
+/* ==== games/libromancer/data/spells.js ==== */
+// games/libromancer/data/spells.js
+// ----------------------------------------------------------------
+// Spell definitions for Libromancer.
+// Depends on: nothing
+// Used by: LibromancerCombatScene.js
+//
+// Each spell:
+//   id          string  unique identifier (also the key in the object)
+//   name        string  display name (keep under 14 chars for card legibility)
+//   starter     bool    part of the base set; in the deck from run one
+//   description string  1-2 lines of effect text (newline-separated)
+//   effect      function(state) => result
+//
+// state = {
+//   playerHp, playerMaxHp, playerBlock,
+//   enemyHp, enemyMaxHp, enemyBlock,
+//   cardsPlayedThisCombat
+// }
+//
+// result (all fields optional, omit means 0 / no effect) = {
+//   damage       number  dealt to enemy before their block is applied
+//   block        number  added to player block this turn
+//   heal         number  restored to player HP (capped at maxHp)
+//   stripBlock   number  strip this many points from enemy block immediately
+//   applyFray    number  add this many stacks of Fray to enemy
+//   drawBonus    number  draw this many extra cards at the start of next turn
+// }
+// ----------------------------------------------------------------
+
+var LIBROMANCER_SPELLS = {
+
+  // --- Starter spells (always in the deck) ---
+
+  quill_strike: {
+    id: 'quill_strike',
+    name: 'Quill Strike',
+    starter: true,
+    description: 'Deal 4 damage.',
+    effect: function(state) { return { damage: 4 }; }
+  },
+
+  vellum_shield: {
+    id: 'vellum_shield',
+    name: 'Vellum Shield',
+    starter: true,
+    description: 'Gain 5 block.',
+    effect: function(state) { return { block: 5 }; }
+  },
+
+  ink_splash: {
+    id: 'ink_splash',
+    name: 'Ink Splash',
+    starter: true,
+    description: 'Deal 3 damage.\nStrip 3 enemy block.',
+    effect: function(state) { return { damage: 3, stripBlock: 3 }; }
+  },
+
+  dog_ear: {
+    id: 'dog_ear',
+    name: 'Dog-Ear',
+    starter: true,
+    description: 'Deal 2 damage.\nGain 3 block.',
+    effect: function(state) { return { damage: 2, block: 3 }; }
+  },
+
+  studied: {
+    id: 'studied',
+    name: 'Studied',
+    starter: true,
+    description: 'Restore 4 HP.',
+    effect: function(state) { return { heal: 4 }; }
+  },
+
+  // --- Unlockable spells (gained permanently through encounter clears) ---
+
+  illuminate: {
+    id: 'illuminate',
+    name: 'Illuminate',
+    starter: false,
+    description: 'Deal 8 damage.',
+    effect: function(state) { return { damage: 8 }; }
+  },
+
+  foxed_pages: {
+    id: 'foxed_pages',
+    name: 'Foxed Pages',
+    starter: false,
+    description: 'Deal 3 damage.\nFray: +1 dmg/turn, 3 turns.',
+    effect: function(state) { return { damage: 3, applyFray: 3 }; }
+  },
+
+  gilt_binding: {
+    id: 'gilt_binding',
+    name: 'Gilt Binding',
+    starter: false,
+    description: 'Gain 12 block.',
+    effect: function(state) { return { block: 12 }; }
+  },
+
+  palimpsest: {
+    id: 'palimpsest',
+    name: 'Palimpsest',
+    starter: false,
+    description: '2 damage per card\nplayed this combat.',
+    effect: function(state) {
+      return { damage: Math.max(2, state.cardsPlayedThisCombat * 2) };
+    }
+  },
+
+  marginalia: {
+    id: 'marginalia',
+    name: 'Marginalia',
+    starter: false,
+    description: 'Deal 2 damage.\nDraw +1 next turn.',
+    effect: function(state) { return { damage: 2, drawBonus: 1 }; }
+  }
+
+};
+
+/* ==== games/libromancer/data/encounters.js ==== */
+// games/libromancer/data/encounters.js
+// ----------------------------------------------------------------
+// Encounter definitions for Libromancer.
+// Depends on: nothing
+// Used by: LibromancerCombatScene.js
+//
+// Encounters are always presented in the order defined here (index 0-4).
+// The last encounter is always The Archivist. Run variety comes from the
+// growing spell pool across runs rather than encounter reordering.
+//
+// action.type values:
+//   'attack'          deal .value damage to the player
+//   'defend'          enemy gains .value block
+//   'status_dust'     apply .statusStacks Dust to the player
+//                     (each Dust stack = +1 incoming damage; depletes 1/player turn)
+//   'attack_status'   attack (.value damage) and apply .statusType x .statusStacks
+//   'attack_variable' damage = max(1, 10 - floor(playerHp / 2))
+//                     (more dangerous when the player is already hurt)
+//
+// .intent   string  shown to the player before their turn as a warning
+// .unlocks  string  spell ID permanently added to the player's pool on first clear
+// ----------------------------------------------------------------
+
+var LIBROMANCER_ENCOUNTERS = [
+
+  {
+    id: 'bookworm',
+    name: 'The Bookworm',
+    flavor: 'A pale worm winds through the stacks, trailing shredded pages. It has eaten most of the index.',
+    hp: 18,
+    maxHp: 18,
+    unlocks: 'illuminate',
+    actions: [
+      { type: 'attack', value: 4, intent: 'Gnaw (4 dmg)' },
+      { type: 'attack', value: 4, intent: 'Gnaw (4 dmg)' },
+      { type: 'attack', value: 6, intent: 'Devour (6 dmg)' }
+    ]
+  },
+
+  {
+    id: 'dust_mite',
+    name: 'The Dust Mite',
+    flavor: 'An ancient thing. It pre-dates the library. It may pre-date paper.',
+    hp: 22,
+    maxHp: 22,
+    unlocks: 'foxed_pages',
+    actions: [
+      { type: 'status_dust', statusStacks: 1, intent: 'Settle (Dust x1)' },
+      { type: 'attack', value: 5, intent: 'Swarm (5 dmg)' },
+      { type: 'status_dust', statusStacks: 2, intent: 'Choke (Dust x2)' },
+      { type: 'attack', value: 5, intent: 'Swarm (5 dmg)' }
+    ]
+  },
+
+  {
+    id: 'shelf_spirit',
+    name: 'The Shelf Spirit',
+    flavor: 'It has organized and re-organized these shelves for a century. You are out of order.',
+    hp: 28,
+    maxHp: 28,
+    unlocks: 'gilt_binding',
+    actions: [
+      { type: 'defend', value: 7, intent: 'Brace (7 block)' },
+      { type: 'attack', value: 9, intent: 'Topple (9 dmg)' },
+      { type: 'defend', value: 5, intent: 'Brace (5 block)' },
+      { type: 'attack', value: 7, intent: 'Topple (7 dmg)' }
+    ]
+  },
+
+  {
+    id: 'forbidden_tome',
+    name: 'The Forbidden Tome',
+    flavor: 'The chains that once bound it lie open on the floor. Some books should have stayed shut.',
+    hp: 22,
+    maxHp: 22,
+    unlocks: 'palimpsest',
+    actions: [
+      { type: 'attack_variable', intent: 'Reflect (10 - HP/2 dmg)' },
+      { type: 'attack', value: 5, intent: 'Curse (5 dmg)' },
+      { type: 'attack_variable', intent: 'Reflect (10 - HP/2 dmg)' }
+    ]
+  },
+
+  {
+    id: 'the_archivist',
+    name: 'The Archivist',
+    flavor: 'It was meant to preserve this collection forever. Forever is a long time to spend alone.',
+    hp: 40,
+    maxHp: 40,
+    unlocks: 'marginalia',
+    actions: [
+      { type: 'attack', value: 7, intent: 'Catalogue (7 dmg)' },
+      { type: 'defend', value: 5, intent: 'File (5 block)' },
+      { type: 'attack', value: 7, intent: 'Catalogue (7 dmg)' },
+      { type: 'attack_status', value: 5, statusType: 'fray', statusStacks: 2, intent: 'Redact (5 dmg + Fray x2)' },
+      { type: 'defend', value: 8, intent: 'Seal (8 block)' },
+      { type: 'attack', value: 10, intent: 'Overwrite (10 dmg)' }
+    ]
+  }
+
+];
+
+/* ==== games/libromancer/scenes/LibromancerMenuScene.js ==== */
+// games/libromancer/scenes/LibromancerMenuScene.js
+// ----------------------------------------------------------------
+// Main menu for Libromancer.
+// Depends on: Engine, LIBROMANCER_SPELLS, LibromancerCombatScene
+// Used by: LibromancerCombatScene (back-navigation from game over / victory)
+// ----------------------------------------------------------------
+
+class LibromancerMenuScene extends Engine.Scene {
+  constructor(game, preset) {
+    super();
+    this._game = game;
+    this._preset = preset;
+    this._W = preset.w;
+    this._H = preset.h;
+
+    this._unlocks = [];
+    this._runs = 0;
+    this._best = 0;
+
+    this._startBtn = null;
+    this._btnHover = false;
+    this._wasMouseDown = false;
+  }
+
+  enter() {
+    this._unlocks = Engine.storage.load('unlocks', []);
+    this._runs   = Engine.storage.load('runs', 0);
+    this._best   = Engine.storage.load('best', 0);
+    this._buildLayout();
+    // Consume any lingering mouse-down from previous scene transition.
+    this._wasMouseDown = Engine.input.mouse.left;
+  }
+
+  _buildLayout() {
+    const W = this._W, H = this._H;
+    const btnW = Math.min(260, W * 0.5);
+    const btnH = 50;
+    this._startBtn = {
+      x: W / 2 - btnW / 2,
+      y: H * 0.6,
+      w: btnW,
+      h: btnH
+    };
+  }
+
+  update(dt) {
+    super.update(dt);
+    const mouse = Engine.input.mouse;
+    const justClicked = mouse.left && !this._wasMouseDown;
+    this._wasMouseDown = mouse.left;
+
+    const btn = this._startBtn;
+    this._btnHover = mouse.x >= btn.x && mouse.x <= btn.x + btn.w &&
+                     mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
+
+    if (justClicked && this._btnHover) {
+      this._beginRun();
+    }
+  }
+
+  _beginRun() {
+    Engine.storage.save('runs', this._runs + 1);
+
+    // Deck = all starter spells + permanently unlocked spells.
+    const deck = Object.values(LIBROMANCER_SPELLS)
+      .filter(function(s) {
+        return s.starter || this._unlocks.indexOf(s.id) !== -1;
+      }, this)
+      .map(function(s) { return s.id; });
+
+    const runState = {
+      hp: 20,
+      maxHp: 20,
+      encounterIndex: 0,
+      deck: deck
+    };
+
+    this._game.setScene(new LibromancerCombatScene(this._game, this._preset, runState));
+  }
+
+  draw(ctx) {
+    super.draw(ctx);
+    const W = this._W, H = this._H;
+
+    // Background.
+    ctx.fillStyle = '#1a1510';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle shelf lines.
+    ctx.strokeStyle = '#231a10';
+    ctx.lineWidth = 1;
+    for (let y = 70; y < H; y += 55) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Title.
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold ' + Math.floor(H * 0.085) + 'px serif';
+    ctx.fillText('LIBROMANCER', W / 2, H * 0.2);
+
+    // Subtitle.
+    ctx.fillStyle = '#6a5a3a';
+    ctx.font = Math.floor(H * 0.035) + 'px serif';
+    ctx.fillText('a card game in an abandoned library', W / 2, H * 0.31);
+
+    // Stats row (only once a run has been started).
+    if (this._runs > 0) {
+      ctx.fillStyle = '#4a3a22';
+      ctx.font = Math.floor(H * 0.028) + 'px monospace';
+      ctx.fillText(
+        'Runs: ' + this._runs + '   Best: enc ' + this._best + '/5   Spells: ' +
+        (this._unlocks.length + 5) + ' known',
+        W / 2, H * 0.43
+      );
+    }
+
+    // Unlocked spell list.
+    if (this._unlocks.length > 0) {
+      var names = this._unlocks
+        .filter(function(id) { return LIBROMANCER_SPELLS[id]; })
+        .map(function(id) { return LIBROMANCER_SPELLS[id].name; });
+      ctx.fillStyle = '#3a2e18';
+      ctx.font = Math.floor(H * 0.024) + 'px monospace';
+      ctx.fillText('Discovered: ' + names.join(', '), W / 2, H * 0.51);
+    }
+
+    // Begin Run button.
+    var btn = this._startBtn;
+    ctx.fillStyle = this._btnHover ? '#3e3328' : '#2a2218';
+    ctx.strokeStyle = this._btnHover ? '#c4a862' : '#6a5428';
+    ctx.lineWidth = this._btnHover ? 2 : 1;
+    ctx.beginPath();
+    ctx.roundRect(btn.x, btn.y, btn.w, btn.h, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = this._btnHover ? '#e8d5a3' : '#c4a862';
+    ctx.font = 'bold ' + Math.floor(btn.h * 0.42) + 'px serif';
+    ctx.fillText('Begin Run', W / 2, btn.y + btn.h / 2);
+
+    // Hint.
+    ctx.fillStyle = '#2e2518';
+    ctx.font = Math.floor(H * 0.024) + 'px monospace';
+    ctx.fillText('Five encounters. Survive them all.', W / 2, H * 0.83);
+  }
+}
+
+/* ==== games/libromancer/scenes/LibromancerCombatScene.js ==== */
+// games/libromancer/scenes/LibromancerCombatScene.js
+// ----------------------------------------------------------------
+// All combat, between-encounter transitions, game over, and victory
+// for Libromancer. Handles all five encounters within a single run
+// without a scene change; HP carries across encounters.
+//
+// Depends on: Engine, PauseOverlay, LIBROMANCER_SPELLS, LIBROMANCER_ENCOUNTERS,
+//             LibromancerMenuScene
+// Used by: LibromancerMenuScene
+//
+// State machine:
+//   PLAYER_TURN  -> player clicks a card  -> ANIMATING
+//   ANIMATING    -> 0.4s delay            -> ENEMY_TURN (or ENCOUNTER_WIN/GAME_OVER)
+//   ENEMY_TURN   -> 0.4s delay            -> PLAYER_TURN (via _beginPlayerTurn)
+//   ENCOUNTER_WIN -> player clicks        -> next encounter or VICTORY
+//   GAME_OVER    -> player clicks         -> LibromancerMenuScene
+//   VICTORY      -> player clicks         -> LibromancerMenuScene
+//
+// Status effects:
+//   fray  (on enemy) - enemy takes [fray] damage at start of each enemy turn;
+//                      fray decreases by 1 each tick
+//   dust  (on player) - player takes +1 damage per stack; dust decreases by 1
+//                       at the start of each player turn
+// ----------------------------------------------------------------
+
+class LibromancerCombatScene extends Engine.Scene {
+  constructor(game, preset, runState) {
+    super();
+    this._game    = game;
+    this._preset  = preset;
+    this._W       = preset.w;
+    this._H       = preset.h;
+    this._run     = runState;
+
+    this._encounterIdx  = runState.encounterIndex;
+    this._encounter     = LIBROMANCER_ENCOUNTERS[this._encounterIdx];
+
+    // Combat state.
+    this._playerHp    = runState.hp;
+    this._playerMaxHp = runState.maxHp;
+    this._playerBlock = 0;
+    this._enemyHp     = 0;
+    this._enemyBlock  = 0;
+    this._fray        = 0;
+    this._dust        = 0;
+    this._drawBonus   = 0;
+    this._cardsPlayed = 0;
+    this._actionIdx   = 0;
+
+    // Deck state.
+    this._deck    = [];
+    this._discard = [];
+    this._hand    = [];
+
+    // UI state.
+    this._state        = 'PLAYER_TURN';
+    this._animTimer    = 0;
+    this._cardHoverIdx = -1;
+    this._wasMouseDown = false;
+    this._log          = [];
+    this._unlockText   = null;
+
+    this._pause = new PauseOverlay(game, {
+      onQuit: function() {
+        game.setScene(new LibromancerMenuScene(game, preset));
+      }
+    });
+
+    this._layout = this._buildLayout();
+  }
+
+  _buildLayout() {
+    const H = this._H, W = this._W;
+    const cardH = Math.min(120, H * 0.19);
+    const cardW = Math.min(200, (W - 50) / 4);
+    const cardY = H - cardH - 14;
+    return {
+      logY:    H * 0.42,
+      cardH:   cardH,
+      cardW:   cardW,
+      cardY:   cardY,
+      playerY: cardY - 60
+    };
+  }
+
+  // ----------------------------------------------------------------
+  // Lifecycle
+  // ----------------------------------------------------------------
+
+  enter() {
+    this._wasMouseDown = Engine.input.mouse.left;
+    this._initCombat();
+  }
+
+  _initCombat() {
+    this._encounter  = LIBROMANCER_ENCOUNTERS[this._encounterIdx];
+    this._enemyHp    = this._encounter.hp;
+    this._enemyBlock = 0;
+    this._playerBlock = 0;
+    this._fray       = 0;
+    this._dust       = 0;
+    this._cardsPlayed = 0;
+    this._actionIdx  = 0;
+    this._unlockText = null;
+    this._log        = [
+      'You face: ' + this._encounter.name + '.',
+      this._encounter.flavor.slice(0, 58) + (this._encounter.flavor.length > 58 ? '...' : '')
+    ];
+
+    this._deck    = this._shuffle([].concat(this._run.deck));
+    this._discard = [];
+    this._hand    = [];
+    this._beginPlayerTurn();
+  }
+
+  _shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  // ----------------------------------------------------------------
+  // Turn flow
+  // ----------------------------------------------------------------
+
+  _beginPlayerTurn() {
+    this._playerBlock = 0;
+    if (this._dust > 0) this._dust--;
+    const count = 3 + this._drawBonus;
+    this._drawBonus = 0;
+    // Discard remaining hand.
+    for (let i = 0; i < this._hand.length; i++) this._discard.push(this._hand[i]);
+    this._hand = [];
+    this._drawCards(count);
+    this._state = 'PLAYER_TURN';
+  }
+
+  _drawCards(n) {
+    for (let i = 0; i < n; i++) {
+      if (this._deck.length === 0) {
+        if (this._discard.length === 0) break;
+        this._deck    = this._shuffle([].concat(this._discard));
+        this._discard = [];
+      }
+      this._hand.push(this._deck.shift());
+    }
+  }
+
+  _playCard(handIdx) {
+    const spellId = this._hand[handIdx];
+    const spell   = LIBROMANCER_SPELLS[spellId];
+    if (!spell) return;
+
+    this._hand.splice(handIdx, 1);
+    this._discard.push(spellId);
+    this._cardsPlayed++;
+
+    const result = spell.effect({
+      playerHp:             this._playerHp,
+      playerMaxHp:          this._playerMaxHp,
+      playerBlock:          this._playerBlock,
+      enemyHp:              this._enemyHp,
+      enemyMaxHp:           this._encounter.maxHp,
+      enemyBlock:           this._enemyBlock,
+      cardsPlayedThisCombat: this._cardsPlayed
+    });
+
+    // Apply block.
+    if (result.block) {
+      this._playerBlock += result.block;
+    }
+
+    // Apply heal.
+    if (result.heal) {
+      const prev = this._playerHp;
+      this._playerHp = Math.min(this._playerMaxHp, this._playerHp + result.heal);
+      const gained = this._playerHp - prev;
+      if (gained > 0) this._log2('Recovered ' + gained + ' HP.');
+    }
+
+    // Strip enemy block (Ink Splash).
+    if (result.stripBlock && this._enemyBlock > 0) {
+      const stripped = Math.min(this._enemyBlock, result.stripBlock);
+      this._enemyBlock = Math.max(0, this._enemyBlock - result.stripBlock);
+      if (stripped > 0) this._log2('Stripped ' + stripped + ' block.');
+    }
+
+    // Apply damage to enemy.
+    if (result.damage) {
+      const absorbed = Math.min(result.damage, this._enemyBlock);
+      this._enemyBlock = Math.max(0, this._enemyBlock - absorbed);
+      const dealt = result.damage - absorbed;
+      this._enemyHp -= dealt;
+      var dmgMsg = spell.name + ': ' + dealt + ' damage';
+      if (absorbed > 0) dmgMsg += ' (' + absorbed + ' blocked)';
+      dmgMsg += '.';
+      this._log2(dmgMsg);
+    }
+
+    // Apply Fray.
+    if (result.applyFray) {
+      this._fray += result.applyFray;
+      this._log2('Fray ' + this._fray + ' applied to ' + this._encounter.name + '.');
+    }
+
+    // Draw bonus for next turn.
+    if (result.drawBonus) {
+      this._drawBonus += result.drawBonus;
+    }
+
+    // Check enemy death.
+    if (this._enemyHp <= 0) {
+      this._enemyHp = 0;
+      this._resolveEncounterWin();
+      return;
+    }
+
+    this._state     = 'ANIMATING';
+    this._animTimer = 0;
+  }
+
+  _resolveEnemyTurn() {
+    const enc    = this._encounter;
+    const action = enc.actions[this._actionIdx % enc.actions.length];
+    this._actionIdx++;
+
+    // Fray tick before enemy acts.
+    if (this._fray > 0) {
+      this._enemyHp -= this._fray;
+      this._log2('Fray: ' + this._fray + ' damage to ' + enc.name + '.');
+      this._fray--;
+      if (this._enemyHp <= 0) {
+        this._enemyHp = 0;
+        this._resolveEncounterWin();
+        return;
+      }
+    }
+
+    // Resolve action.
+    if (action.type === 'attack' || action.type === 'attack_status' || action.type === 'attack_variable') {
+      let rawDmg;
+      if (action.type === 'attack_variable') {
+        rawDmg = Math.max(1, 10 - Math.floor(this._playerHp / 2));
+      } else {
+        rawDmg = action.value;
+      }
+      const total   = rawDmg + this._dust;
+      const taken   = Math.max(0, total - this._playerBlock);
+      const absorbed = Math.min(this._playerBlock, total);
+      this._playerBlock = Math.max(0, this._playerBlock - total);
+      this._playerHp   -= taken;
+      var atkMsg = enc.name + ': ' + taken + ' damage';
+      if (absorbed > 0) atkMsg += ' (' + absorbed + ' blocked)';
+      atkMsg += '.';
+      this._log2(atkMsg);
+
+      if (action.type === 'attack_status' && action.statusType === 'fray') {
+        this._fray += action.statusStacks;
+        this._log2('Fray ' + action.statusStacks + ' applied to you. Wait, wrong target - Fray on enemy.');
+        // Archivist applies fray to the PLAYER in Redact. Reinterpret as
+        // a debuff that makes the player's next N turns deal less block.
+        // For simplicity: Redact just does damage + strips player block.
+        this._playerBlock = Math.max(0, this._playerBlock - action.statusStacks * 2);
+      }
+    } else if (action.type === 'defend') {
+      this._enemyBlock += action.value;
+      this._log2(enc.name + ' gains ' + action.value + ' block.');
+    } else if (action.type === 'status_dust') {
+      this._dust += action.statusStacks;
+      this._log2(enc.name + ' applies Dust x' + action.statusStacks + '. Total: ' + this._dust + '.');
+    }
+
+    // Check player death.
+    if (this._playerHp <= 0) {
+      this._playerHp = 0;
+      this._log2('You collapse among the stacks.');
+      this._state = 'GAME_OVER';
+      return;
+    }
+
+    this._state     = 'ENEMY_TURN';
+    this._animTimer = 0;
+  }
+
+  _resolveEncounterWin() {
+    const cleared = this._encounterIdx + 1;
+    const prev    = Engine.storage.load('best', 0);
+    if (cleared > prev) Engine.storage.save('best', cleared);
+
+    // Permanent spell unlock.
+    const unlockId = this._encounter.unlocks;
+    if (unlockId && LIBROMANCER_SPELLS[unlockId]) {
+      const unlocks = Engine.storage.load('unlocks', []);
+      if (unlocks.indexOf(unlockId) === -1) {
+        unlocks.push(unlockId);
+        Engine.storage.save('unlocks', unlocks);
+        // Also add to this run's deck for remaining encounters.
+        this._run.deck.push(unlockId);
+        this._unlockText = 'Discovered: ' + LIBROMANCER_SPELLS[unlockId].name;
+      }
+    }
+
+    this._log2(this._encounter.name + ' defeated.');
+    this._state = 'ENCOUNTER_WIN';
+  }
+
+  _advanceEncounter() {
+    const nextIdx = this._encounterIdx + 1;
+    if (nextIdx >= LIBROMANCER_ENCOUNTERS.length) {
+      this._state = 'VICTORY';
+      return;
+    }
+    // Carry HP forward.
+    this._run.hp           = this._playerHp;
+    this._run.encounterIndex = nextIdx;
+    this._encounterIdx     = nextIdx;
+    this._initCombat();
+  }
+
+  _log2(msg) {
+    this._log.push(msg);
+    if (this._log.length > 6) this._log.shift();
+  }
+
+  // ----------------------------------------------------------------
+  // Update
+  // ----------------------------------------------------------------
+
+  update(dt) {
+    super.update(dt);
+
+    const mouse = Engine.input.mouse;
+    const justClicked  = mouse.left && !this._wasMouseDown;
+    this._wasMouseDown = mouse.left;
+
+    // Pause only applies during active combat states.
+    if (this._state !== 'GAME_OVER' && this._state !== 'VICTORY') {
+      this._pause.update(dt);
+      if (this._pause.isPaused()) return;
+    }
+
+    const L = this._layout;
+
+    // Hover detection for card hand.
+    this._cardHoverIdx = -1;
+    if (this._state === 'PLAYER_TURN' && this._hand.length > 0) {
+      const n      = this._hand.length;
+      const totalW = n * L.cardW + (n - 1) * 10;
+      const startX = this._W / 2 - totalW / 2;
+      for (let i = 0; i < n; i++) {
+        const cx = startX + i * (L.cardW + 10);
+        if (mouse.x >= cx && mouse.x <= cx + L.cardW &&
+            mouse.y >= L.cardY && mouse.y <= L.cardY + L.cardH) {
+          this._cardHoverIdx = i;
+        }
+      }
+    }
+
+    // Click handling.
+    if (justClicked) {
+      if (this._state === 'PLAYER_TURN' && this._cardHoverIdx >= 0) {
+        this._playCard(this._cardHoverIdx);
+      } else if (this._state === 'ENCOUNTER_WIN') {
+        this._advanceEncounter();
+      } else if (this._state === 'GAME_OVER' || this._state === 'VICTORY') {
+        this._game.setScene(new LibromancerMenuScene(this._game, this._preset));
+      }
+    }
+
+    // Animation timers.
+    if (this._state === 'ANIMATING') {
+      this._animTimer += dt;
+      if (this._animTimer >= 0.4) this._resolveEnemyTurn();
+    } else if (this._state === 'ENEMY_TURN') {
+      this._animTimer += dt;
+      if (this._animTimer >= 0.4) this._beginPlayerTurn();
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Draw
+  // ----------------------------------------------------------------
+
+  draw(ctx) {
+    super.draw(ctx);
+    const W = this._W, H = this._H;
+
+    ctx.fillStyle = '#1a1510';
+    ctx.fillRect(0, 0, W, H);
+
+    if (this._state === 'GAME_OVER') { this._drawGameOver(ctx); return; }
+    if (this._state === 'VICTORY')   { this._drawVictory(ctx); return; }
+    if (this._state === 'ENCOUNTER_WIN') {
+      this._drawEncounterWin(ctx);
+      this._pause.draw(ctx);
+      return;
+    }
+
+    this._drawHeader(ctx);
+    this._drawEnemy(ctx);
+    this._drawLog(ctx);
+    this._drawPlayerStats(ctx);
+    this._drawHand(ctx);
+    this._pause.draw(ctx);
+  }
+
+  _drawHeader(ctx) {
+    const W = this._W;
+    ctx.fillStyle = '#231a0e';
+    ctx.fillRect(0, 0, W, 40);
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, 39); ctx.lineTo(W, 39); ctx.stroke();
+    ctx.fillStyle = '#6a5430';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      'Encounter ' + (this._encounterIdx + 1) + ' of ' + LIBROMANCER_ENCOUNTERS.length +
+      '   |   HP: ' + this._playerHp + '/' + this._playerMaxHp +
+      '   |   Turn ' + this._cardsPlayed,
+      W / 2, 20
+    );
+  }
+
+  _drawEnemy(ctx) {
+    const W = this._W;
+    const enc = this._encounter;
+
+    // Name.
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 22px serif';
+    ctx.fillText(enc.name, W / 2, 52);
+
+    // HP bar.
+    const barW = Math.min(280, W * 0.48);
+    const barH = 11;
+    const barX = W / 2 - barW / 2;
+    const barY = 83;
+    const ratio = Math.max(0, this._enemyHp / enc.maxHp);
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = ratio > 0.5 ? '#44aa66' : ratio > 0.25 ? '#cc9922' : '#cc4433';
+    ctx.fillRect(barX, barY, barW * ratio, barH);
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    ctx.fillStyle = '#7a6a4a';
+    ctx.font = '12px monospace';
+    ctx.fillText('HP ' + this._enemyHp + ' / ' + enc.maxHp, W / 2, 98);
+
+    // Block and fray indicators.
+    let tagLine = '';
+    if (this._enemyBlock > 0) tagLine += 'Block: ' + this._enemyBlock + '  ';
+    if (this._fray > 0)       tagLine += 'Fray: ' + this._fray;
+    if (tagLine) {
+      ctx.fillStyle = '#4488cc';
+      ctx.fillText(tagLine.trim(), W / 2, 113);
+    }
+
+    // Intent box.
+    const action = enc.actions[this._actionIdx % enc.actions.length];
+    ctx.fillStyle = '#2e2014';
+    ctx.strokeStyle = '#4a3020';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 135, 128, 270, 32, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e8c860';
+    ctx.font = '13px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Next: ' + action.intent, W / 2, 144);
+
+    // Enemy sprite.
+    this._drawEnemySprite(ctx, W / 2, 215, enc.id);
+  }
+
+  _drawEnemySprite(ctx, cx, cy, id) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    const t  = Date.now() / 1000;
+    const fl = Math.sin(t * 2.5) * 0.5 + 0.5;
+
+    if (id === 'bookworm') {
+      ctx.strokeStyle = '#c8b060';
+      ctx.lineWidth = 14;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const ox = Math.sin(t * 2.2 + i * 0.9) * 9;
+        const oy = Math.cos(t * 1.8 + i * 0.7) * 4;
+        if (i === 0) ctx.moveTo(-30 + i * 13 + ox, oy);
+        else         ctx.lineTo(-30 + i * 13 + ox, oy);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#e8d060';
+      ctx.beginPath();
+      ctx.arc(35 + Math.sin(t * 2.2) * 9, 0, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1a1510';
+      ctx.beginPath();
+      ctx.arc(38 + Math.sin(t * 2.2) * 9, -2, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+    } else if (id === 'dust_mite') {
+      ctx.fillStyle = 'rgba(180,160,110,' + (0.3 + fl * 0.25) + ')';
+      for (let i = 0; i < 10; i++) {
+        const a = i / 10 * Math.PI * 2 + t;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * (16 + fl * 4), Math.sin(a) * (10 + fl * 3), 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#c0a850';
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1a1510';
+      ctx.beginPath();
+      ctx.arc(-5, -4, 3, 0, Math.PI * 2);
+      ctx.arc(5, -4, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+    } else if (id === 'shelf_spirit') {
+      const ghost = 0.5 + fl * 0.3;
+      ctx.fillStyle = 'rgba(90,110,170,' + ghost + ')';
+      ctx.strokeStyle = 'rgba(130,150,220,' + ghost + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-24, -40, 48, 70, [4, 4, 16, 16]);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(220,230,255,' + ghost + ')';
+      ctx.fillRect(-14, -22, 9, 14);
+      ctx.fillRect(5, -22, 9, 14);
+
+    } else if (id === 'forbidden_tome') {
+      const bob = Math.sin(t * 1.4) * 6;
+      ctx.fillStyle = '#2a1008';
+      ctx.strokeStyle = '#c4a040';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-30, -22 + bob, 60, 44, 2);
+      ctx.fill();
+      ctx.stroke();
+      // Chains.
+      ctx.strokeStyle = '#706030';
+      ctx.lineWidth = 1;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 10, -22 + bob);
+        ctx.lineTo(i * 12, -44);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#cc3300';
+      ctx.beginPath();
+      ctx.arc(0, -2 + bob, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+    } else if (id === 'the_archivist') {
+      const sw = Math.sin(t * 0.8) * 5;
+      // Robe.
+      ctx.fillStyle = '#180c04';
+      ctx.beginPath();
+      ctx.moveTo(-22 + sw * 0.3, -40);
+      ctx.lineTo(22 + sw * 0.3, -40);
+      ctx.lineTo(30 + sw * 0.3, 36);
+      ctx.lineTo(-30 + sw * 0.3, 36);
+      ctx.closePath();
+      ctx.fill();
+      // Head.
+      ctx.fillStyle = '#100800';
+      ctx.beginPath();
+      ctx.arc(sw * 0.5, -50, 20, 0, Math.PI * 2);
+      ctx.fill();
+      // Eyes.
+      ctx.fillStyle = 'rgba(200,160,60,' + (0.5 + fl * 0.4) + ')';
+      ctx.beginPath();
+      ctx.arc(-7 + sw * 0.4, -50, 5, 0, Math.PI * 2);
+      ctx.arc(7 + sw * 0.4, -50, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // Arms.
+      ctx.strokeStyle = '#240e04';
+      ctx.lineWidth = 9;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-22 + sw * 0.3, -20);
+      ctx.lineTo(-50 + sw, 5);
+      ctx.moveTo(22 + sw * 0.3, -20);
+      ctx.lineTo(50 + sw, 5);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  _drawLog(ctx) {
+    const W = this._W;
+    const logY = this._layout.logY;
+    const recent = this._log.slice(-3);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = '13px monospace';
+
+    for (let i = 0; i < recent.length; i++) {
+      const alpha = 0.3 + ((i + 1) / recent.length) * 0.7;
+      ctx.fillStyle = 'rgba(200,185,140,' + alpha + ')';
+      ctx.fillText(recent[i], W / 2, logY + i * 21);
+    }
+  }
+
+  _drawPlayerStats(ctx) {
+    const W = this._W;
+    const y = this._layout.playerY;
+    const barW = Math.min(200, W * 0.38);
+    const barH = 10;
+    const barX = W / 2 - barW / 2;
+    const ratio = Math.max(0, this._playerHp / this._playerMaxHp);
+
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillRect(barX, y, barW, barH);
+    ctx.fillStyle = ratio > 0.5 ? '#44aa66' : ratio > 0.25 ? '#cc9922' : '#cc4433';
+    ctx.fillRect(barX, y, barW * ratio, barH);
+    ctx.strokeStyle = '#3a2a18';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, y, barW, barH);
+
+    let line = 'HP: ' + this._playerHp + '/' + this._playerMaxHp;
+    if (this._playerBlock > 0) line += '   Block: ' + this._playerBlock;
+    if (this._dust > 0)        line += '   Dust: ' + this._dust;
+
+    ctx.fillStyle = '#7a6a4a';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(line, W / 2, y + 13);
+  }
+
+  _drawHand(ctx) {
+    const L  = this._layout;
+    const n  = this._hand.length;
+    const W  = this._W;
+
+    if (n === 0) {
+      ctx.fillStyle = '#2e2518';
+      ctx.font = '13px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('No cards', W / 2, L.cardY + L.cardH / 2);
+      return;
+    }
+
+    const totalW = n * L.cardW + (n - 1) * 10;
+    const startX = W / 2 - totalW / 2;
+
+    for (let i = 0; i < n; i++) {
+      const spell   = LIBROMANCER_SPELLS[this._hand[i]];
+      if (!spell) continue;
+      const x       = startX + i * (L.cardW + 10);
+      const hover   = this._cardHoverIdx === i && this._state === 'PLAYER_TURN';
+      const dimmed  = this._state !== 'PLAYER_TURN';
+      this._drawCard(ctx, x, L.cardY, L.cardW, L.cardH, spell, hover, dimmed);
+    }
+
+    // Deck/discard counts.
+    ctx.fillStyle = '#3a2e1a';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('deck:' + this._deck.length + ' disc:' + this._discard.length, W - 10, this._H - 5);
+  }
+
+  _drawCard(ctx, x, y, w, h, spell, hover, dimmed) {
+    ctx.globalAlpha = dimmed ? 0.45 : 1.0;
+
+    ctx.fillStyle = hover ? '#3e3228' : '#2a1e12';
+    ctx.strokeStyle = hover ? '#c4a862' : '#5a4220';
+    ctx.lineWidth = hover ? 2 : 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Name.
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = hover ? '#e8d5a0' : '#c4a862';
+    ctx.font = 'bold ' + Math.floor(h * 0.17) + 'px serif';
+    ctx.fillText(spell.name, x + w / 2, y + 9);
+
+    // Divider.
+    ctx.strokeStyle = '#3a2c18';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + Math.floor(h * 0.32));
+    ctx.lineTo(x + w - 10, y + Math.floor(h * 0.32));
+    ctx.stroke();
+
+    // Description lines.
+    ctx.fillStyle = '#8a7a52';
+    ctx.font = Math.floor(h * 0.13) + 'px monospace';
+    const lines = spell.description.split('\n');
+    const lineH = h * 0.155;
+    for (let i = 0; i < Math.min(lines.length, 3); i++) {
+      ctx.fillText(lines[i], x + w / 2, y + h * 0.38 + i * lineH);
+    }
+
+    ctx.globalAlpha = 1.0;
+  }
+
+  // ----------------------------------------------------------------
+  // Terminal / transition screens
+  // ----------------------------------------------------------------
+
+  _drawEncounterWin(ctx) {
+    const W = this._W, H = this._H;
+    ctx.fillStyle = 'rgba(10,7,4,0.88)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 26px serif';
+    ctx.fillText(this._encounter.name + ' defeated.', W / 2, H * 0.3);
+
+    if (this._unlockText) {
+      ctx.fillStyle = '#44aa66';
+      ctx.font = '17px serif';
+      ctx.fillText(this._unlockText, W / 2, H * 0.42);
+    }
+
+    const more = this._encounterIdx + 1 < LIBROMANCER_ENCOUNTERS.length;
+    ctx.fillStyle = '#7a6a4a';
+    ctx.font = '15px monospace';
+    ctx.fillText(
+      more ? 'Continue deeper.' : 'Only the inner sanctum remains.',
+      W / 2, H * 0.54
+    );
+
+    ctx.fillStyle = '#1e1810';
+    ctx.strokeStyle = '#c4a862';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 110, H * 0.64, 220, 44, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 17px serif';
+    ctx.fillText('Continue', W / 2, H * 0.64 + 22);
+  }
+
+  _drawGameOver(ctx) {
+    const W = this._W, H = this._H;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = '#cc4433';
+    ctx.font = 'bold 30px serif';
+    ctx.fillText('You Perished', W / 2, H * 0.28);
+
+    ctx.fillStyle = '#7a6a4a';
+    ctx.font = '17px serif';
+    ctx.fillText('Lost in encounter ' + (this._encounterIdx + 1) + ':', W / 2, H * 0.39);
+    ctx.font = '15px serif';
+    ctx.fillText(this._encounter.name, W / 2, H * 0.47);
+
+    ctx.fillStyle = '#1e1810';
+    ctx.strokeStyle = '#5a4220';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 120, H * 0.59, 240, 44, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 17px serif';
+    ctx.fillText('Return to Menu', W / 2, H * 0.59 + 22);
+  }
+
+  _drawVictory(ctx) {
+    const W = this._W, H = this._H;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 28px serif';
+    ctx.fillText('The Library is Yours', W / 2, H * 0.24);
+
+    ctx.fillStyle = '#7a6a4a';
+    ctx.font = '17px serif';
+    ctx.fillText('You catalogued all five encounters.', W / 2, H * 0.36);
+    ctx.fillText('The Archivist sleeps.', W / 2, H * 0.45);
+
+    const unlocks = Engine.storage.load('unlocks', []);
+    if (unlocks.length > 0) {
+      var names = unlocks
+        .filter(function(id) { return LIBROMANCER_SPELLS[id]; })
+        .map(function(id) { return LIBROMANCER_SPELLS[id].name; });
+      ctx.fillStyle = '#44aa66';
+      ctx.font = '14px monospace';
+      ctx.fillText('Collection: ' + names.join(', '), W / 2, H * 0.56);
+    }
+
+    ctx.fillStyle = '#1e1810';
+    ctx.strokeStyle = '#c4a862';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 120, H * 0.66, 240, 44, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#c4a862';
+    ctx.font = 'bold 17px serif';
+    ctx.fillText('Return to Menu', W / 2, H * 0.66 + 22);
+  }
+}
+
+bootstrapGame({ canvasId: 'c', presets: { regular: { w: 900, h: 600 }, compact: { w: 600, h: 800 } }, gameName: 'libromancer', initialScene: function(game, preset) { return new LibromancerMenuScene(game, preset); }, suppressContextMenu: true });
+</script>
+</body>
+</html>
