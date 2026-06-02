@@ -9,18 +9,24 @@
 // Used by: LibromancerMenuScene
 //
 // State machine:
-//   PLAYER_TURN  -> player clicks a card  -> ANIMATING
-//   ANIMATING    -> 0.4s delay            -> ENEMY_TURN (or ENCOUNTER_WIN/GAME_OVER)
-//   ENEMY_TURN   -> 0.4s delay            -> PLAYER_TURN (via _beginPlayerTurn)
-//   ENCOUNTER_WIN -> player clicks        -> next encounter or VICTORY
-//   GAME_OVER    -> player clicks         -> LibromancerMenuScene
-//   VICTORY      -> player clicks         -> LibromancerMenuScene
+//   PLAYER_TURN  -> player clicks a card or Rest  -> ANIMATING
+//   ANIMATING    -> 0.4s delay                    -> ENEMY_TURN (or ENCOUNTER_WIN/GAME_OVER)
+//   ENEMY_TURN   -> 0.4s delay                    -> PLAYER_TURN (via _beginPlayerTurn)
+//   ENCOUNTER_WIN -> player clicks                -> next encounter or VICTORY
+//   GAME_OVER    -> player clicks                 -> LibromancerMenuScene
+//   VICTORY      -> player clicks                 -> LibromancerMenuScene
 //
 // Status effects:
 //   fray  (on enemy) - enemy takes [fray] damage at start of each enemy turn;
 //                      fray decreases by 1 each tick
 //   dust  (on player) - player takes +1 damage per stack; dust decreases by 1
 //                       at the start of each player turn
+//
+// Balance notes:
+//   - Enemy block resets at the start of each enemy turn (defend protects one
+//     round only, symmetric with player block)
+//   - Player may Rest once per turn: skips card play, heals 3 HP
+//   - Intent box shows next two scheduled enemy actions
 // ----------------------------------------------------------------
 
 class LibromancerCombatScene extends Engine.Scene {
@@ -66,6 +72,8 @@ class LibromancerCombatScene extends Engine.Scene {
       }
     });
 
+    this._restUsed     = false;
+    this._restBtnHover = false;
     this._layout = this._buildLayout();
   }
 
@@ -73,13 +81,16 @@ class LibromancerCombatScene extends Engine.Scene {
     const H = this._H, W = this._W;
     const cardH = Math.min(120, H * 0.19);
     const cardW = Math.min(200, (W - 50) / 4);
-    const cardY = H - cardH - 14;
+    const cardY = H - cardH - 46;   // shifted up to make room for rest button
+    const restBtnW = 150;
+    const restBtnH = 26;
     return {
       logY:    H * 0.42,
       cardH:   cardH,
       cardW:   cardW,
       cardY:   cardY,
-      playerY: cardY - 60
+      playerY: cardY - 60,
+      restBtn: { x: W / 2 - restBtnW / 2, y: H - restBtnH - 8, w: restBtnW, h: restBtnH }
     };
   }
 
@@ -104,7 +115,7 @@ class LibromancerCombatScene extends Engine.Scene {
     this._unlockText = null;
     this._log        = [
       'You face: ' + this._encounter.name + '.',
-      this._encounter.flavor.slice(0, 58) + (this._encounter.flavor.length > 58 ? '...' : '')
+      this._encounter.flavor
     ];
 
     this._deck    = this._shuffle([].concat(this._run.deck));
@@ -126,6 +137,7 @@ class LibromancerCombatScene extends Engine.Scene {
   // ----------------------------------------------------------------
 
   _beginPlayerTurn() {
+    this._restUsed = false;
     this._playerBlock = 0;
     if (this._dust > 0) this._dust--;
     const count = 3 + this._drawBonus;
@@ -158,12 +170,12 @@ class LibromancerCombatScene extends Engine.Scene {
     this._cardsPlayed++;
 
     const result = spell.effect({
-      playerHp:             this._playerHp,
-      playerMaxHp:          this._playerMaxHp,
-      playerBlock:          this._playerBlock,
-      enemyHp:              this._enemyHp,
-      enemyMaxHp:           this._encounter.maxHp,
-      enemyBlock:           this._enemyBlock,
+      playerHp:              this._playerHp,
+      playerMaxHp:           this._playerMaxHp,
+      playerBlock:           this._playerBlock,
+      enemyHp:               this._enemyHp,
+      enemyMaxHp:            this._encounter.maxHp,
+      enemyBlock:            this._enemyBlock,
       cardsPlayedThisCombat: this._cardsPlayed
     });
 
@@ -222,6 +234,10 @@ class LibromancerCombatScene extends Engine.Scene {
   }
 
   _resolveEnemyTurn() {
+    // Enemy block resets each turn. Defend actions protect for one round only,
+    // not indefinitely. This mirrors the player's block behaviour.
+    this._enemyBlock = 0;
+
     const enc    = this._encounter;
     const action = enc.actions[this._actionIdx % enc.actions.length];
     this._actionIdx++;
@@ -246,8 +262,8 @@ class LibromancerCombatScene extends Engine.Scene {
       } else {
         rawDmg = action.value;
       }
-      const total   = rawDmg + this._dust;
-      const taken   = Math.max(0, total - this._playerBlock);
+      const total    = rawDmg + this._dust;
+      const taken    = Math.max(0, total - this._playerBlock);
       const absorbed = Math.min(this._playerBlock, total);
       this._playerBlock = Math.max(0, this._playerBlock - total);
       this._playerHp   -= taken;
@@ -257,12 +273,9 @@ class LibromancerCombatScene extends Engine.Scene {
       this._log2(atkMsg);
 
       if (action.type === 'attack_status' && action.statusType === 'fray') {
-        this._fray += action.statusStacks;
-        this._log2('Fray ' + action.statusStacks + ' applied to you. Wait, wrong target - Fray on enemy.');
-        // Archivist applies fray to the PLAYER in Redact. Reinterpret as
-        // a debuff that makes the player's next N turns deal less block.
-        // For simplicity: Redact just does damage + strips player block.
+        // Archivist's Redact: attack + strip player block as a secondary effect.
         this._playerBlock = Math.max(0, this._playerBlock - action.statusStacks * 2);
+        this._log2('Redact strips ' + (action.statusStacks * 2) + ' player block.');
       }
     } else if (action.type === 'defend') {
       this._enemyBlock += action.value;
@@ -313,15 +326,24 @@ class LibromancerCombatScene extends Engine.Scene {
       return;
     }
     // Carry HP forward.
-    this._run.hp           = this._playerHp;
+    this._run.hp             = this._playerHp;
     this._run.encounterIndex = nextIdx;
-    this._encounterIdx     = nextIdx;
+    this._encounterIdx       = nextIdx;
     this._initCombat();
   }
 
   _log2(msg) {
     this._log.push(msg);
     if (this._log.length > 6) this._log.shift();
+  }
+
+  _rest() {
+    const healed = Math.min(3, this._playerMaxHp - this._playerHp);
+    this._playerHp += healed;
+    this._restUsed = true;
+    this._log2('You rest.' + (healed > 0 ? ' Recovered ' + healed + ' HP.' : ' Already at full HP.'));
+    this._state     = 'ANIMATING';
+    this._animTimer = 0;
   }
 
   // ----------------------------------------------------------------
@@ -343,17 +365,25 @@ class LibromancerCombatScene extends Engine.Scene {
 
     const L = this._layout;
 
-    // Hover detection for card hand.
+    // Hover detection for card hand and rest button.
     this._cardHoverIdx = -1;
-    if (this._state === 'PLAYER_TURN' && this._hand.length > 0) {
-      const n      = this._hand.length;
-      const totalW = n * L.cardW + (n - 1) * 10;
-      const startX = this._W / 2 - totalW / 2;
-      for (let i = 0; i < n; i++) {
-        const cx = startX + i * (L.cardW + 10);
-        if (mouse.x >= cx && mouse.x <= cx + L.cardW &&
-            mouse.y >= L.cardY && mouse.y <= L.cardY + L.cardH) {
-          this._cardHoverIdx = i;
+    this._restBtnHover = false;
+    if (this._state === 'PLAYER_TURN') {
+      const rb = L.restBtn;
+      if (mouse.x >= rb.x && mouse.x <= rb.x + rb.w &&
+          mouse.y >= rb.y && mouse.y <= rb.y + rb.h) {
+        this._restBtnHover = true;
+      }
+      if (this._hand.length > 0) {
+        const n      = this._hand.length;
+        const totalW = n * L.cardW + (n - 1) * 10;
+        const startX = this._W / 2 - totalW / 2;
+        for (let i = 0; i < n; i++) {
+          const cx = startX + i * (L.cardW + 10);
+          if (mouse.x >= cx && mouse.x <= cx + L.cardW &&
+              mouse.y >= L.cardY && mouse.y <= L.cardY + L.cardH) {
+            this._cardHoverIdx = i;
+          }
         }
       }
     }
@@ -362,6 +392,8 @@ class LibromancerCombatScene extends Engine.Scene {
     if (justClicked) {
       if (this._state === 'PLAYER_TURN' && this._cardHoverIdx >= 0) {
         this._playCard(this._cardHoverIdx);
+      } else if (this._state === 'PLAYER_TURN' && this._restBtnHover && !this._restUsed) {
+        this._rest();
       } else if (this._state === 'ENCOUNTER_WIN') {
         this._advanceEncounter();
       } else if (this._state === 'GAME_OVER' || this._state === 'VICTORY') {
@@ -429,7 +461,6 @@ class LibromancerCombatScene extends Engine.Scene {
     const W = this._W;
     const enc = this._encounter;
 
-    // Name.
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#c4a862';
@@ -463,21 +494,24 @@ class LibromancerCombatScene extends Engine.Scene {
       ctx.fillText(tagLine.trim(), W / 2, 113);
     }
 
-    // Intent box.
-    const action = enc.actions[this._actionIdx % enc.actions.length];
+    // Intent box: show next two scheduled actions.
+    const action  = enc.actions[this._actionIdx % enc.actions.length];
+    const action2 = enc.actions[(this._actionIdx + 1) % enc.actions.length];
     ctx.fillStyle = '#2e2014';
     ctx.strokeStyle = '#4a3020';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(W / 2 - 135, 128, 270, 32, 3);
+    ctx.roundRect(W / 2 - 155, 126, 310, 44, 3);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#e8c860';
     ctx.font = '13px monospace';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Next: ' + action.intent, W / 2, 144);
+    ctx.fillStyle = '#e8c860';
+    ctx.fillText('Now: ' + action.intent, W / 2, 138);
+    ctx.fillStyle = '#6a5a30';
+    ctx.font = '11px monospace';
+    ctx.fillText('Then: ' + action2.intent, W / 2, 156);
 
-    // Enemy sprite.
     this._drawEnemySprite(ctx, W / 2, 215, enc.id);
   }
 
@@ -549,7 +583,6 @@ class LibromancerCombatScene extends Engine.Scene {
       ctx.roundRect(-30, -22 + bob, 60, 44, 2);
       ctx.fill();
       ctx.stroke();
-      // Chains.
       ctx.strokeStyle = '#706030';
       ctx.lineWidth = 1;
       for (let i = -2; i <= 2; i++) {
@@ -565,7 +598,6 @@ class LibromancerCombatScene extends Engine.Scene {
 
     } else if (id === 'the_archivist') {
       const sw = Math.sin(t * 0.8) * 5;
-      // Robe.
       ctx.fillStyle = '#180c04';
       ctx.beginPath();
       ctx.moveTo(-22 + sw * 0.3, -40);
@@ -574,18 +606,15 @@ class LibromancerCombatScene extends Engine.Scene {
       ctx.lineTo(-30 + sw * 0.3, 36);
       ctx.closePath();
       ctx.fill();
-      // Head.
       ctx.fillStyle = '#100800';
       ctx.beginPath();
       ctx.arc(sw * 0.5, -50, 20, 0, Math.PI * 2);
       ctx.fill();
-      // Eyes.
       ctx.fillStyle = 'rgba(200,160,60,' + (0.5 + fl * 0.4) + ')';
       ctx.beginPath();
       ctx.arc(-7 + sw * 0.4, -50, 5, 0, Math.PI * 2);
       ctx.arc(7 + sw * 0.4, -50, 5, 0, Math.PI * 2);
       ctx.fill();
-      // Arms.
       ctx.strokeStyle = '#240e04';
       ctx.lineWidth = 9;
       ctx.lineCap = 'round';
@@ -600,10 +629,22 @@ class LibromancerCombatScene extends Engine.Scene {
     ctx.restore();
   }
 
+  _truncateLine(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let t = text;
+    while (t.length > 0) {
+      const sp = t.lastIndexOf(' ');
+      t = sp > 0 ? t.slice(0, sp) : t.slice(0, t.length - 1);
+      if (ctx.measureText(t + '...').width <= maxWidth) return t + '...';
+    }
+    return '...';
+  }
+
   _drawLog(ctx) {
     const W = this._W;
     const logY = this._layout.logY;
     const recent = this._log.slice(-3);
+    const maxW = W * 0.88;
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -612,7 +653,7 @@ class LibromancerCombatScene extends Engine.Scene {
     for (let i = 0; i < recent.length; i++) {
       const alpha = 0.3 + ((i + 1) / recent.length) * 0.7;
       ctx.fillStyle = 'rgba(200,185,140,' + alpha + ')';
-      ctx.fillText(recent[i], W / 2, logY + i * 21);
+      ctx.fillText(this._truncateLine(ctx, recent[i], maxW), W / 2, logY + i * 21);
     }
   }
 
@@ -634,7 +675,7 @@ class LibromancerCombatScene extends Engine.Scene {
 
     let line = 'HP: ' + this._playerHp + '/' + this._playerMaxHp;
     if (this._playerBlock > 0) line += '   Block: ' + this._playerBlock;
-    if (this._dust > 0)        line += '   Dust: ' + this._dust;
+    if (this._dust > 0)        line += '   Dust: ' + this._dust + ' (+' + this._dust + ' dmg)';
 
     ctx.fillStyle = '#7a6a4a';
     ctx.font = '12px monospace';
@@ -644,9 +685,9 @@ class LibromancerCombatScene extends Engine.Scene {
   }
 
   _drawHand(ctx) {
-    const L  = this._layout;
-    const n  = this._hand.length;
-    const W  = this._W;
+    const L = this._layout;
+    const n = this._hand.length;
+    const W = this._W;
 
     if (n === 0) {
       ctx.fillStyle = '#2e2518';
@@ -654,19 +695,17 @@ class LibromancerCombatScene extends Engine.Scene {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No cards', W / 2, L.cardY + L.cardH / 2);
-      return;
-    }
-
-    const totalW = n * L.cardW + (n - 1) * 10;
-    const startX = W / 2 - totalW / 2;
-
-    for (let i = 0; i < n; i++) {
-      const spell   = LIBROMANCER_SPELLS[this._hand[i]];
-      if (!spell) continue;
-      const x       = startX + i * (L.cardW + 10);
-      const hover   = this._cardHoverIdx === i && this._state === 'PLAYER_TURN';
-      const dimmed  = this._state !== 'PLAYER_TURN';
-      this._drawCard(ctx, x, L.cardY, L.cardW, L.cardH, spell, hover, dimmed);
+    } else {
+      const totalW = n * L.cardW + (n - 1) * 10;
+      const startX = W / 2 - totalW / 2;
+      for (let i = 0; i < n; i++) {
+        const spell  = LIBROMANCER_SPELLS[this._hand[i]];
+        if (!spell) continue;
+        const x      = startX + i * (L.cardW + 10);
+        const hover  = this._cardHoverIdx === i && this._state === 'PLAYER_TURN';
+        const dimmed = this._state !== 'PLAYER_TURN';
+        this._drawCard(ctx, x, L.cardY, L.cardW, L.cardH, spell, hover, dimmed);
+      }
     }
 
     // Deck/discard counts.
@@ -675,11 +714,32 @@ class LibromancerCombatScene extends Engine.Scene {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     ctx.fillText('deck:' + this._deck.length + ' disc:' + this._discard.length, W - 10, this._H - 5);
+
+    // Rest button.
+    const rb      = L.restBtn;
+    const canRest = this._state === 'PLAYER_TURN' && !this._restUsed;
+    const rbHover = this._restBtnHover && canRest;
+    ctx.globalAlpha = canRest ? 1.0 : 0.35;
+    ctx.fillStyle   = rbHover ? '#2e2a1e' : '#1e1a10';
+    ctx.strokeStyle = rbHover ? '#c4a862' : '#4a3820';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.roundRect(rb.x, rb.y, rb.w, rb.h, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle    = rbHover ? '#e8d5a0' : '#8a7040';
+    ctx.font         = '12px monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Rest  (+3 HP, skip turn)', rb.x + rb.w / 2, rb.y + rb.h / 2);
+    ctx.globalAlpha  = 1.0;
   }
 
   _drawCard(ctx, x, y, w, h, spell, hover, dimmed) {
+    ctx.save();
     ctx.globalAlpha = dimmed ? 0.45 : 1.0;
 
+    // Background and border drawn before clipping so border is fully visible.
     ctx.fillStyle = hover ? '#3e3228' : '#2a1e12';
     ctx.strokeStyle = hover ? '#c4a862' : '#5a4220';
     ctx.lineWidth = hover ? 2 : 1;
@@ -688,14 +748,17 @@ class LibromancerCombatScene extends Engine.Scene {
     ctx.fill();
     ctx.stroke();
 
-    // Name.
+    // Clip all subsequent text to the card interior.
+    ctx.beginPath();
+    ctx.rect(x + 4, y + 4, w - 8, h - 8);
+    ctx.clip();
+
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = hover ? '#e8d5a0' : '#c4a862';
     ctx.font = 'bold ' + Math.floor(h * 0.17) + 'px serif';
     ctx.fillText(spell.name, x + w / 2, y + 9);
 
-    // Divider.
     ctx.strokeStyle = '#3a2c18';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -703,7 +766,6 @@ class LibromancerCombatScene extends Engine.Scene {
     ctx.lineTo(x + w - 10, y + Math.floor(h * 0.32));
     ctx.stroke();
 
-    // Description lines.
     ctx.fillStyle = '#8a7a52';
     ctx.font = Math.floor(h * 0.13) + 'px monospace';
     const lines = spell.description.split('\n');
@@ -713,6 +775,7 @@ class LibromancerCombatScene extends Engine.Scene {
     }
 
     ctx.globalAlpha = 1.0;
+    ctx.restore();
   }
 
   // ----------------------------------------------------------------
@@ -723,28 +786,20 @@ class LibromancerCombatScene extends Engine.Scene {
     const W = this._W, H = this._H;
     ctx.fillStyle = 'rgba(10,7,4,0.88)';
     ctx.fillRect(0, 0, W, H);
-
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
     ctx.fillStyle = '#c4a862';
     ctx.font = 'bold 26px serif';
     ctx.fillText(this._encounter.name + ' defeated.', W / 2, H * 0.3);
-
     if (this._unlockText) {
       ctx.fillStyle = '#44aa66';
       ctx.font = '17px serif';
       ctx.fillText(this._unlockText, W / 2, H * 0.42);
     }
-
     const more = this._encounterIdx + 1 < LIBROMANCER_ENCOUNTERS.length;
     ctx.fillStyle = '#7a6a4a';
     ctx.font = '15px monospace';
-    ctx.fillText(
-      more ? 'Continue deeper.' : 'Only the inner sanctum remains.',
-      W / 2, H * 0.54
-    );
-
+    ctx.fillText(more ? 'Continue deeper.' : 'Only the inner sanctum remains.', W / 2, H * 0.54);
     ctx.fillStyle = '#1e1810';
     ctx.strokeStyle = '#c4a862';
     ctx.lineWidth = 1;
@@ -761,17 +816,14 @@ class LibromancerCombatScene extends Engine.Scene {
     const W = this._W, H = this._H;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
     ctx.fillStyle = '#cc4433';
     ctx.font = 'bold 30px serif';
     ctx.fillText('You Perished', W / 2, H * 0.28);
-
     ctx.fillStyle = '#7a6a4a';
     ctx.font = '17px serif';
     ctx.fillText('Lost in encounter ' + (this._encounterIdx + 1) + ':', W / 2, H * 0.39);
     ctx.font = '15px serif';
     ctx.fillText(this._encounter.name, W / 2, H * 0.47);
-
     ctx.fillStyle = '#1e1810';
     ctx.strokeStyle = '#5a4220';
     ctx.lineWidth = 1;
@@ -788,16 +840,13 @@ class LibromancerCombatScene extends Engine.Scene {
     const W = this._W, H = this._H;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
     ctx.fillStyle = '#c4a862';
     ctx.font = 'bold 28px serif';
     ctx.fillText('The Library is Yours', W / 2, H * 0.24);
-
     ctx.fillStyle = '#7a6a4a';
     ctx.font = '17px serif';
     ctx.fillText('You catalogued all five encounters.', W / 2, H * 0.36);
     ctx.fillText('The Archivist sleeps.', W / 2, H * 0.45);
-
     const unlocks = Engine.storage.load('unlocks', []);
     if (unlocks.length > 0) {
       var names = unlocks
@@ -807,7 +856,6 @@ class LibromancerCombatScene extends Engine.Scene {
       ctx.font = '14px monospace';
       ctx.fillText('Collection: ' + names.join(', '), W / 2, H * 0.56);
     }
-
     ctx.fillStyle = '#1e1810';
     ctx.strokeStyle = '#c4a862';
     ctx.lineWidth = 1;
