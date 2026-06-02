@@ -1,0 +1,15 @@
+{
+  "game": "libromancer",
+  "title": "Libromancer",
+  "output": "build/libromancer.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "games/libromancer/data/spells.js",
+    "games/libromancer/data/encounters.js",
+    "games/libromancer/scenes/LibromancerMenuScene.js",
+    "games/libromancer/scenes/LibromancerCombatScene.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'c', presets: { regular: { w: 900, h: 600 }, compact: { w: 600, h: 800 } }, gameName: 'libromancer', initialScene: function(game, preset) { return new LibromancerMenuScene(game, preset); }, suppressContextMenu: true });"
+}
