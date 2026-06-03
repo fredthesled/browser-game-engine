@@ -1,0 +1,56 @@
+# =============================================================================
+# .github/workflows/bundle.yml
+# =============================================================================
+# Regenerates engine/engine.bundle.js whenever an engine source file changes,
+# so the bundle is never hand-assembled. Concatenates the sources listed in
+# engine/bundle-manifest.json via scripts/build-bundle.sh, runs node --check on
+# the result, and commits it back.
+#
+# Loop prevention: engine/engine.bundle.js is excluded from the trigger paths,
+# and commits made by GITHUB_TOKEN do not retrigger workflows.
+#
+# Permissions: Settings > Actions > General > Workflow permissions must be
+# "Read and write permissions" for the commit-back step (already required by
+# build.yml).
+# =============================================================================
+
+name: Regenerate Engine Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'engine/**'
+      - '!engine/engine.bundle.js'
+      - 'scripts/build-bundle.sh'
+      - '.github/workflows/bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Regenerate engine bundle from sources
+        run: |
+          chmod +x scripts/build-bundle.sh
+          bash scripts/build-bundle.sh
+
+      - name: Syntax-check the regenerated bundle
+        run: node --check engine/engine.bundle.js
+
+      - name: Commit regenerated bundle back to repository
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "engine: auto-regenerate bundle"
+          file_pattern: engine/engine.bundle.js
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com

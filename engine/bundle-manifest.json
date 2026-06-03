@@ -1,0 +1,17 @@
+{
+  "output": "engine/engine.bundle.js",
+  "sources": [
+    "engine/lib/riffwave.js",
+    "engine/lib/sfxr.js",
+    "engine/signal-bus.js",
+    "engine/input.js",
+    "engine/script.js",
+    "engine/game-object.js",
+    "engine/scene.js",
+    "engine/audio.js",
+    "engine/storage.js",
+    "engine/game.js",
+    "engine/narrative.js",
+    "engine/balance.js"
+  ]
+}
