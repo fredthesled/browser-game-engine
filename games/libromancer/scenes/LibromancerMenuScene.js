@@ -69,8 +69,8 @@ class LibromancerMenuScene extends Engine.Scene {
       .map(function(s) { return s.id; });
 
     const runState = {
-      hp: 20,
-      maxHp: 20,
+      hp: 22,
+      maxHp: 22,
       encounterIndex: 0,
       deck: deck
     };

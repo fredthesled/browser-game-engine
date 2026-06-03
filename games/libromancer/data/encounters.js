@@ -56,12 +56,12 @@ var LIBROMANCER_ENCOUNTERS = [
     id: 'shelf_spirit',
     name: 'The Shelf Spirit',
     flavor: 'It has organized and re-organized these shelves for a century. You are out of order.',
-    hp: 28,
-    maxHp: 28,
+    hp: 24,
+    maxHp: 24,
     unlocks: 'gilt_binding',
     actions: [
-      { type: 'defend', value: 7, intent: 'Brace (7 block)' },
-      { type: 'attack', value: 9, intent: 'Topple (9 dmg)' },
+      { type: 'defend', value: 5, intent: 'Brace (5 block)' },
+      { type: 'attack', value: 6, intent: 'Topple (6 dmg)' },
       { type: 'defend', value: 5, intent: 'Brace (5 block)' },
       { type: 'attack', value: 7, intent: 'Topple (7 dmg)' }
     ]
@@ -92,7 +92,7 @@ var LIBROMANCER_ENCOUNTERS = [
       { type: 'attack', value: 7, intent: 'Catalogue (7 dmg)' },
       { type: 'defend', value: 5, intent: 'File (5 block)' },
       { type: 'attack', value: 7, intent: 'Catalogue (7 dmg)' },
-      { type: 'attack_status', value: 5, statusType: 'fray', statusStacks: 2, intent: 'Redact (5 dmg + Fray x2)' },
+      { type: 'attack_status', value: 5, statusType: 'fray', statusStacks: 2, intent: 'Redact (5 dmg + strip block)' },
       { type: 'defend', value: 8, intent: 'Seal (8 block)' },
       { type: 'attack', value: 10, intent: 'Overwrite (10 dmg)' }
     ]
