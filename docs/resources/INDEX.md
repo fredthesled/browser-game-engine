@@ -1,6 +1,6 @@
 # Resources Index
 
-This folder is the durable reference for third-party resources, libraries, and tools we use or might use in this framework. The intent is that future sessions consult these documents before researching from scratch.
+This folder is the durable reference for third-party resources, libraries, and tools we use or might use in this framework, plus consolidated internal references worth consulting before researching from scratch. The intent is that future sessions consult these documents before researching from scratch.
 
 ## Files
 
@@ -8,6 +8,7 @@ This folder is the durable reference for third-party resources, libraries, and t
 - `libraries.md` for JavaScript libraries we may bundle (audio playback, sound generation, collision detection, utilities).
 - `multiplayer.md` for networking architectures, library choices, and the WebRTC signaling problem.
 - `attribution.md` for crediting third-party work inside games, including a credits scene template.
+- `balance.md` for difficulty, cost, and progression math: the `Engine.Balance` primitives and the field's standard formulas (curves, cost scaling, diminishing returns, DDA, prestige). Consult before deriving balance math. See ADR-0020.
 
 ## License policy (summary)
 
