@@ -3,7 +3,7 @@
 // ============================================================================
 // Tunable balance primitives: parameterized difficulty curves and cost
 // scaling. Pure, stateless functions under Engine.Balance. Default constants
-// follow the values supported by docs/resources/balance.md (see ADR-0019).
+// follow the values supported by docs/resources/balance.md (see ADR-0020).
 //
 // Depends on: nothing (pure math).
 // Depended on by: game-specific scripts/scenes that ramp difficulty or price
