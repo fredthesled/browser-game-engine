@@ -4,7 +4,7 @@ This document describes the engine's design as of the most recent locked-in deci
 
 ## Overview
 
-The engine is composed of nine classes/modules, each in its own file under `engine/`:
+The engine is composed of ten classes/modules, each in its own file under `engine/`:
 
 | File | Class/module | Role |
 |------|--------------|------|
@@ -17,12 +17,13 @@ The engine is composed of nine classes/modules, each in its own file under `engi
 | `engine/audio.js` | `Audio` (global instance) | Procedural sound effects via vendored jsfxr. |
 | `engine/storage.js` | `Storage` (global instance) | Key/value persistence backed by localStorage, with optional per-game namespacing. |
 | `engine/narrative.js` | `Narrative` (per-encounter instance) | Thin wrapper around an inkjs Story for branching narrative content. Not a singleton; instantiated per encounter by game code. |
+| `engine/balance.js` | `Balance` (static namespace) | Tunable difficulty-curve and cost-scaling primitives. Pure, stateless functions; opt-in per game, not used by the engine core. |
 
-The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely. `Narrative` is also instantiated freely (typically once per encounter or dialogue surface) and is not held by the Game class.
+The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely. `Narrative` is also instantiated freely (typically once per encounter or dialogue surface) and is not held by the Game class. `Engine.Balance` is neither a singleton instance nor a class to instantiate; it is a namespace of pure functions (comparable to JavaScript's `Math`) that holds no state.
 
 Vendored third-party code lives under `engine/lib/`. The bundled libraries are `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. Per ADR-0018, `engine/lib/` may also host **optional** vendored libraries that are explicitly excluded from the engine bundle; `inkjs.js` (inkjs 2.4.0, MIT, ~249 KB) is the first such library and is used by `engine/narrative.js`. Games using narrative include `engine/lib/inkjs.js` in their build before the engine bundle. See `engine/lib/README.md` for sources and update procedures.
 
-A single-file concatenation of the always-bundled engine modules lives at `engine/engine.bundle.js`. It is an auto-generated artifact (committed to the repo so that sessions can fetch it via MCP in one call) and exists per ADR-0016. The bundle is not part of the source; do not edit it directly. Per CLAUDE.md §8, any commit that touches a bundled engine module must regenerate the bundle in the same commit. Optional vendored libraries (per ADR-0018) are not part of the bundle and do not trigger regeneration when updated.
+A single-file concatenation of the always-bundled engine modules lives at `engine/engine.bundle.js`. It is an auto-generated artifact (committed to the repo so that sessions can fetch it via MCP in one call) and exists per ADR-0016. The bundle is not part of the source; do not edit it directly. Per ADR-0021, the bundle is regenerated automatically by `.github/workflows/bundle.yml` (which runs `scripts/build-bundle.sh`) whenever a bundled engine source changes; the ordered source list lives in `engine/bundle-manifest.json`. Do not hand-regenerate or hand-push the bundle: edit the source, and add or remove a manifest line when adding or removing a module. Optional vendored libraries (per ADR-0018) are not in the manifest and do not trigger regeneration when updated.
 
 ## Class contracts
 
@@ -192,6 +193,19 @@ Dependency: `engine/narrative.js` requires the `inkjs` global to be loaded befor
 
 State-sync pattern: scenes that combine narrative with other game state (a ship's hull, the player's resources) typically write game state into ink variables at encounter start, run the encounter, then read ink variables back out at encounter end. External functions (`bindExternal`) handle side effects that should fire mid-encounter. Tags on emitted lines (`#color: red`, `#sfx: alarm`) carry presentation hints.
 
+### Balance (static namespace)
+
+Responsibilities: provide tunable, mathematically grounded primitives for difficulty pacing and cost scaling, so games express these consistently instead of re-deriving formulas. `Engine.Balance` is a namespace of pure, stateless functions, not a singleton or a class. The engine core does not call it; it is opt-in per game. See ADR-0020 and `docs/resources/balance.md` (which carries the formulas, default constants, and the deferred-primitive roadmap).
+
+Public API:
+
+- `difficulty(t, opts = {})` returns a difficulty or intensity value as a function of caller-defined progress `t`. `opts.type` selects the curve family: `'linear'` (`d0 + m*t`), `'exponential'` (`d0 * r^t`), `'logarithmic'` (`d0 + k*ln(1+t)`), or `'logistic'` (`L / (1 + e^(-k*(t - t0)))`). Default is `'logistic'`, the general-purpose pacing curve (slow start, steep middle, plateau at `L`); set `opts.t0` to the progress midpoint.
+- `cost(n, opts = {})` returns the price of a purchase when you already own `n` units: `base * rate^n`. `opts.rate` defaults to 1.10 (documented band 1.07-1.15); `opts.base` defaults to 1.
+- `bulkCost(owned, count, opts = {})` returns the closed-form total to buy `count` units starting from `owned`: `base * (rate^owned * (rate^count - 1)) / (rate - 1)`. Replaces a summation loop.
+- `maxAffordable(owned, currency, opts = {})` returns how many units `currency` buys starting from `owned`: the closed-form inverse of `bulkCost`.
+
+Defaults use nullish-coalescing, so an explicit `0` (e.g. `d0: 0`) is honored rather than replaced. Future increments (diminishing returns, multiplicative damage, pseudo-random distribution and pity timers, XP curves, prestige curves, a dynamic-difficulty controller) extend this namespace per the roadmap in `docs/resources/balance.md`, each as its own ADR.
+
 ## Frame lifecycle
 
 For each animation frame the Game class executes, in order:
@@ -284,7 +298,8 @@ Note that collision response between a colliding pair is dispatched via direct m
 
 ```
 engine/
-├── engine.bundle.js  (auto-generated, see ADR-0016)
+├── engine.bundle.js       (auto-generated by CI, see ADR-0016 and ADR-0021)
+├── bundle-manifest.json   (ordered source list driving the bundle, ADR-0021)
 ├── game.js
 ├── scene.js
 ├── game-object.js
@@ -294,6 +309,7 @@ engine/
 ├── audio.js
 ├── storage.js
 ├── narrative.js
+├── balance.js
 └── lib/
     ├── README.md
     ├── UNLICENSE
@@ -317,13 +333,14 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 9. `engine/storage.js` (no engine dependencies)
 10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
 11. `engine/narrative.js` (no compile-time dependencies; runtime requires `inkjs` global)
-12. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`, and (when used) `Engine.Narrative`.
-13. Scenes (after the scripts they reference).
-14. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+12. `engine/balance.js` (no dependencies; pure-function namespace)
+13. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`, and (when used) `Engine.Narrative` and `Engine.Balance`.
+14. Scenes (after the scripts they reference).
+15. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 
 Games that use narrative additionally inline `engine/lib/inkjs.js` **before step 1** (or, in the bundle-inlining path described below, before the bundle). The inkjs UMD wrapper installs the `inkjs` global at script-load time; `engine/narrative.js` reads that global at construction time.
 
-Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016) inlines steps 1 through 11 in the canonical order. A build that uses the bundle replaces steps 1 through 11 with a single inline of the bundle file followed by steps 12 through 14. For games using narrative, the sequence becomes: `engine/lib/inkjs.js`, then `engine.bundle.js`, then scripts, scenes, and bootstrap. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; per CLAUDE.md §8, any commit that changes a bundled engine module must regenerate the bundle in the same commit.
+Alternatively, the auto-generated `engine/engine.bundle.js` (see ADR-0016, regenerated by CI per ADR-0021) inlines steps 1 through 12 in the canonical order recorded in `engine/bundle-manifest.json`. A build that uses the bundle replaces steps 1 through 12 with a single inline of the bundle file followed by steps 13 through 15. For games using narrative, the sequence becomes: `engine/lib/inkjs.js`, then `engine.bundle.js`, then scripts, scenes, and bootstrap. The bundle is the canonical single-file engine artifact and is the target sessions should fetch when they need current engine source; it is regenerated automatically by `.github/workflows/bundle.yml`, so a source change is reflected in the bundle within one short CI run rather than by a manual step.
 
 ## Open questions and future work
 
@@ -336,3 +353,4 @@ Not in scope for the initial engine version, to be designed with an ADR when nee
 - Spatial partitioning for collision. The current O(N²) pairwise pass is fine up to ~20 colliders. See ADR-0010.
 - Touch input mapping. Hit-target sizing in the visual language anticipates touch (ADR-0017), but actual touch-to-pointer event handling in `engine/input.js` is deferred until a game requires it.
 - Networking and multiplayer. See `docs/resources/multiplayer.md`.
+- Balance primitive expansion. `Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling; diminishing returns, damage formulas, RNG shaping, XP curves, prestige, and dynamic difficulty adjustment are staged in `docs/resources/balance.md` and added per future ADRs.
