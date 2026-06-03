@@ -26,6 +26,7 @@
 //   - Enemy block resets at the start of each enemy turn (defend protects one
 //     round only, symmetric with player block)
 //   - Player may Rest once per turn: skips card play, heals 3 HP
+//   - Player heals up to 5 HP between encounter clears
 //   - Intent box shows next two scheduled enemy actions
 // ----------------------------------------------------------------
 
@@ -65,6 +66,7 @@ class LibromancerCombatScene extends Engine.Scene {
     this._wasMouseDown = false;
     this._log          = [];
     this._unlockText   = null;
+    this._restoreText  = null;
 
     this._pause = new PauseOverlay(game, {
       onQuit: function() {
@@ -112,7 +114,8 @@ class LibromancerCombatScene extends Engine.Scene {
     this._dust       = 0;
     this._cardsPlayed = 0;
     this._actionIdx  = 0;
-    this._unlockText = null;
+    this._unlockText  = null;
+    this._restoreText = null;
     this._log        = [
       'You face: ' + this._encounter.name + '.',
       this._encounter.flavor
@@ -273,7 +276,7 @@ class LibromancerCombatScene extends Engine.Scene {
       this._log2(atkMsg);
 
       if (action.type === 'attack_status' && action.statusType === 'fray') {
-        // Archivist's Redact: attack + strip player block as a secondary effect.
+        // Archivist's Redact: attack + strip player block as secondary effect.
         this._playerBlock = Math.max(0, this._playerBlock - action.statusStacks * 2);
         this._log2('Redact strips ' + (action.statusStacks * 2) + ' player block.');
       }
@@ -313,6 +316,13 @@ class LibromancerCombatScene extends Engine.Scene {
         this._run.deck.push(unlockId);
         this._unlockText = 'Discovered: ' + LIBROMANCER_SPELLS[unlockId].name;
       }
+    }
+
+    // Restore HP between encounters (not after the final one).
+    if (this._encounterIdx + 1 < LIBROMANCER_ENCOUNTERS.length) {
+      const restore = Math.min(5, this._playerMaxHp - this._playerHp);
+      this._playerHp += restore;
+      this._restoreText = restore > 0 ? 'You rest. Recovered ' + restore + ' HP.' : null;
     }
 
     this._log2(this._encounter.name + ' defeated.');
@@ -788,28 +798,40 @@ class LibromancerCombatScene extends Engine.Scene {
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
     ctx.fillStyle = '#c4a862';
     ctx.font = 'bold 26px serif';
     ctx.fillText(this._encounter.name + ' defeated.', W / 2, H * 0.3);
+
     if (this._unlockText) {
       ctx.fillStyle = '#44aa66';
       ctx.font = '17px serif';
-      ctx.fillText(this._unlockText, W / 2, H * 0.42);
+      ctx.fillText(this._unlockText, W / 2, H * 0.4);
     }
+    if (this._restoreText) {
+      ctx.fillStyle = '#6699aa';
+      ctx.font = '14px monospace';
+      ctx.fillText(this._restoreText, W / 2, H * 0.49);
+    }
+
     const more = this._encounterIdx + 1 < LIBROMANCER_ENCOUNTERS.length;
     ctx.fillStyle = '#7a6a4a';
     ctx.font = '15px monospace';
-    ctx.fillText(more ? 'Continue deeper.' : 'Only the inner sanctum remains.', W / 2, H * 0.54);
+    ctx.fillText(
+      more ? 'Continue deeper.' : 'Only the inner sanctum remains.',
+      W / 2, H * 0.57
+    );
+
     ctx.fillStyle = '#1e1810';
     ctx.strokeStyle = '#c4a862';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(W / 2 - 110, H * 0.64, 220, 44, 4);
+    ctx.roundRect(W / 2 - 110, H * 0.66, 220, 44, 4);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#c4a862';
     ctx.font = 'bold 17px serif';
-    ctx.fillText('Continue', W / 2, H * 0.64 + 22);
+    ctx.fillText('Continue', W / 2, H * 0.66 + 22);
   }
 
   _drawGameOver(ctx) {
