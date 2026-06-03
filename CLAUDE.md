@@ -76,7 +76,7 @@ Don't ask obvious questions. Don't ask things the request already answered. Dig 
 When a request lands in one of these, raise it during pre-flight rather than discover it mid-build.
 
 - **Pixel-grid placement and LLM SVG.** 2D integer arrays for sprite frames are fundamentally weak: no spatial awareness across rows, no error correction, expensive in tokens. LLM-generated SVG also benchmarks middling for current models (SVGenius and LLM4SVG, December 2024; Claude-3.5 specifically at FID 82.89 vs. LLM4SVG at 64.11). Both are inferior for our use cases to procedural drawing via `scripts/shape-sprite.js` (Shape DSL, ADR-0015). For high-fidelity raster output, route to a diffusion model via MCP or import a hand-made sprite sheet.
-- **Long verbatim reproduction.** Reciting articles, books, song lyrics, etc. — won't be accurate, and copyright applies regardless. Paraphrase or fetch.
+- **Long verbatim reproduction.** Reciting articles, books, song lyrics, etc. — won't be accurate, and copyright applies regardless. Paraphrase or fetch. This also applies to large repo artifacts: regenerating a big file (for example the engine bundle) by emitting it in one tool call is unreliable and has timed out in practice. Move that assembly to CI (see §8 and ADR-0019, ADR-0021).
 - **Fresh raster image generation.** Claude has no native image-gen model. SVG yes (with the caveats above), ASCII yes, PNG no. Route to an image model via MCP/tool, or import.
 - **Many-step floating-point math.** Long arithmetic chains accumulate error. Prefer code execution.
 - **Spatial layouts without a render loop.** "Position these elements correctly" without seeing output is a guess. Render → screenshot → vision is far better.
@@ -127,12 +127,14 @@ Honor these immediately. Don't quietly partial-comply. If the user invokes a ski
 
 - **Token economy is non-negotiable.** When building a tool that calls the API, mention the per-call token cost and a rough budget for typical use.
 - **Reuse before invent.** If the engine already has a primitive that fits, use it. Search the engine source before adding a new system.
+- **Name the balance math.** When a build or change introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or any progression, identify which `Engine.Balance` primitive (or documented formula in `docs/resources/balance.md`) applies and state it in the plan before coding. If none fits, say so. This applies to initial builds and incremental changes alike. See ADR-0020.
 - **Thin wrappers preferred.** A 50-line wrapper around a mature tool beats a 500-line reimplementation.
 - **No silent network calls.** Tools that hit external services should make that visible to the user of the tool.
 - **No SFX in initial builds.** Omit all `Engine.audio.register()` and `Engine.audio.play()` calls from a game's first implementation unless Trevor explicitly requests sound effects. User feedback confirms that procedural jsfxr audio is consistently muted or described as grating in practice. Audio can be added in a follow-up session when asked. The engine audio module and jsfxr remain available; this is an authoring convention, not an engine change.
 - **Deterministic > generative when possible.** If a procedural approach can produce the asset, prefer it over an LLM call.
 - **Dead files are marked, not deleted, when tool gating prevents removal.** See `docs/DEAD_FILES.md` for the full convention and the active disposal queue. Files carrying a `DEAD-FILE` banner header are inert: do not modify them, do not include them in builds, do not surface them as backlog. A grep for `DEAD-FILE` across the repo enumerates every such file.
-- **Engine source fetch.** When a session needs the current engine source, fetch `engine/engine.bundle.js` as the canonical single-file representation. Do not reconstruct from individual modules and do not extract from old build files (game builds may inline an outdated engine version). Any commit that touches a bundled engine module (any `engine/*.js`, or a vendored library in `engine/lib/` that is included in the bundle) MUST regenerate the bundle in the same commit; the bundle's own header documents the regeneration recipe. Optional vendored libraries explicitly excluded from the bundle (per ADR-0018, e.g. `engine/lib/inkjs.js`) do not require regeneration when updated, since they are not part of the bundle's contents. See ADR-0016 and ADR-0018.
+- **Engine source fetch.** When a session needs the current engine source, fetch `engine/engine.bundle.js` as the canonical single-file representation. Do not reconstruct from individual modules and do not extract from old build files (game builds may inline an outdated engine version). See ADR-0016 and ADR-0018.
+- **The bundle is CI-generated; never hand-build it.** `engine/engine.bundle.js` is regenerated automatically by `.github/workflows/bundle.yml` whenever a bundled engine source changes (ADR-0021). To change the engine: edit the source file(s), and if adding or removing a module, add or remove its line in `engine/bundle-manifest.json`. Do not hand-regenerate, hand-edit, or push the bundle; CI runs `scripts/build-bundle.sh`, `node --check`s the result, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Optional vendored libraries excluded from the bundle (per ADR-0018, e.g. `engine/lib/inkjs.js`) are not in the manifest and neither trigger nor require regeneration. When assembling a build by hand in a degraded-tools session, still inline the bundle byte-for-byte from a `get_file_contents` fetch (never reconstruct from memory); only regeneration is automated, not consumption.
 - **Build pipeline.** Games with a `games/<name>/build-manifest.json` are assembled automatically by `.github/workflows/build.yml` on every push to main. Claude commits source files; the workflow handles concatenation and delivery. Do not attempt to assemble builds manually in session. See ADR-0019 and `scripts/build-game.sh` for the manifest schema.
 
 ---
@@ -149,6 +151,18 @@ Honor these immediately. Don't quietly partial-comply. If the user invokes a ski
 **What should have happened.** Score it: novelty 1, scope 2, Claude-fit 2, reversibility 1, domain-specificity 2 = **8/10**. Pre-flight triggers. Search → "direct pixel gen is weak; PixelLab and similar use diffusion; Aseprite MCP exists; SVG-rasterize is a middle path." Surface options. User picks. Build the right thing.
 
 **Lesson encoded.** Generative content tasks (anything producing visual/audio/structured output for end-user consumption) **score domain-specificity at 2 by default** and **Claude-fit conservatively**. Engine subsystems score scope at 2 by default. These two combined put almost every meaningful engine task at ≥6, which is correct.
+
+---
+
+## 9b. Retro: 2026-06-03, balance module bundle drift
+
+**What happened.** Adding `engine/balance.js` (a clean, tested module) went fine, but the follow-on bundle regeneration did not. I first forgot to include the regenerated bundle in the module's commit (creating drift), then tried to fix it by emitting the full ~49 KB bundle in a single tool call, which timed out. Two failures around the same artifact.
+
+**Root cause.** The manual bundle-regeneration recipe (ADR-0016) required emitting a large file in one call, which is past the reliable payload size. This is the same ceiling ADR-0019 had already removed for game builds; the engine bundle had simply never been migrated.
+
+**What should have happened.** Recognize the large-single-file emission as a known-weak operation (§4) before attempting it, and reach for the CI solution that already existed in spirit. The fix (ADR-0021) moves bundle regeneration to `.github/workflows/bundle.yml`, so the bundle is never hand-emitted again.
+
+**Lesson encoded.** Any repo artifact that must be emitted whole and is more than a few tens of KB is a CI job, not a chat-surface task. If you find yourself about to paste a large generated file into a push, stop and automate it instead.
 
 ---
 
