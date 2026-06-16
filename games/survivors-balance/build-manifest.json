@@ -1,0 +1,21 @@
+{
+  "game": "survivors-balance",
+  "title": "Survivors (Balance)",
+  "output": "build/survivors-balance.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "scripts/rect-renderer.js",
+    "scripts/collider.js",
+    "games/survivors/scripts/coin.js",
+    "games/survivors/scripts/enemy.js",
+    "games/survivors/scripts/projectile.js",
+    "games/survivors/scripts/player-controller.js",
+    "games/survivors-balance/scenes/survivors-match.js",
+    "games/survivors-balance/scenes/survivors-shop.js",
+    "games/survivors/scenes/survivors-menu.js",
+    "games/survivors/scenes/survivors-levelup.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'survivors-balance', presets: { regular: { w: 800, h: 600 } }, initialScene: (g) => new SurvivorsMenuScene(g), suppressContextMenu: false });"
+}
