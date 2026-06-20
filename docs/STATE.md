@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,20 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (build manifests for remaining games):**
+
+Note: Five earlier draft PRs are open and awaiting review — #1/5 (rolling GitHub Release), #2 (registry validation), #3 (scaffolding script), #4 (balance diminish), #6 (ParallaxBackground + Clown Brawler Tween + manifest). All target `main`. Expect STATE.md merge conflicts when landing; resolve by keeping all session log entries.
+
+1. **Build manifests added for all remaining games.** Four games now have `build-manifest.json` files that put them on the CI pipeline and (once PR #1/#5 lands) on the rolling GitHub Release:
+   - **Pong** (`games/pong/build-manifest.json`): 800×600, `PongMenuScene`, deps: `RectRenderer`, `Collider`.
+   - **Survivors** (`games/survivors/build-manifest.json`): 800×600, `SurvivorsMenuScene`, deps: `RectRenderer`, `Collider`, `PauseOverlay`. Note: `survivors-levelup.js` is a dead file (carries `DEAD-FILE` header) and is excluded from the manifest.
+   - **Horses Teach Typing** (`games/horses-teach-typing/build-manifest.json`): 800×500, `HTTMenuScene`, deps: `PauseOverlay`, `RhythmLetter`.
+   - **Party House** (`games/party-house/build-manifest.json`): 960×540, `PHMenuScene`, `gameName: 'party-house'` (storage for high score).
+
+   All four use `bootstrapGame()` per ADR-0017. These are the last games without manifests — every game is now on the CI pipeline.
+
+## Previously done
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,7 +45,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. Five draft PRs open: #1/#5 (rolling GitHub Release), #2 (registry validation), #3 (scaffolding script), #4 (balance-diminish), #6 (ParallaxBackground + Clown Brawler Tween + manifest). All target `main`.
 
 ## Next up
 
@@ -46,25 +60,21 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Balance primitive expansion
 
-`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
-
-### ParallaxBackground script
-
-`docs/ANIM_CONFIG.md` defines the `parallax.anim.json` sidecar schema, but the `ParallaxBackground` script does not yet exist. Build it when the first game needs scrolling backgrounds. Natural candidate: Clown Brawler (belt-plane side-scroller) or a future driving/runner game. Takes a `layers` config array in its constructor; the sidecar is the communication format Trevor uses to specify it.
+`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)` (drafted in PR #4), multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller. Add the next one when a game needs it rather than speculatively.
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Drafted in PRs #1 and #5. Rolling `latest-build` pre-release gives permanent public download URLs.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
-3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
-4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
+3. ~~**Game scaffolding script.**~~ Drafted in PR #3.
+4. ~~**Registry validation workflow.**~~ Drafted in PR #2.
 
 ### Other game work
 
 5. **Drift v1 bug fixes.**
 6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
-7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
-8. **Build manifests for existing games.** Add when each game is next touched.
+7. ~~**Apply Tween to Clown Brawler.**~~ Drafted in PR #6.
+8. ~~**Build manifests for all games.**~~ Done (2026-06-20). All seven games now have manifests.
 
 ## Deferred to shipping mode
 
@@ -79,9 +89,9 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 ## Deferred housekeeping (tool-gated)
 
 - **Dead file deletion.** Blocked on `GitHub:delete_file` approval.
-- **Minesweeper build bundle drift.** Its inlined build is stale; deferred until the game is next rebuilt. Distinct from engine bundle regeneration, which is now automated (ADR-0021).
-- **Project knowledge bundle mirror is stale.** The repo bundle is now ~70 KB and CI-regenerated; the Project knowledge copy is the older ~49 KB version (2026-05-20). Trevor should re-upload `engine/engine.bundle.js` to Project knowledge at convenience. Sessions can always fetch the current repo bundle, so this is an optimization, not a correctness issue.
-- **`docs/project-bootstrap.md` is out of date.** It still describes the manual bundle-regeneration process and the (now-outdated) claim that `raw.githubusercontent.com` is not reachable. Needs a refresh to point at the CI bundle workflow, then a manual re-upload to Project knowledge.
+- **Minesweeper build bundle drift.** Minesweeper now has a build manifest (PR #1 adds it), so it will get a fresh build once the CI pipeline is live.
+- **Project knowledge bundle mirror is stale.** The repo bundle is now ~70 KB and CI-regenerated; the Project knowledge copy is the older ~49 KB version (2026-05-20). Trevor should re-upload `engine/engine.bundle.js` to Project knowledge at convenience.
+- **`docs/project-bootstrap.md` is out of date.** It still describes the manual bundle-regeneration process. Needs a refresh.
 
 ## Longer horizon
 
@@ -94,21 +104,18 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Clown Brawler sprite decision**: Kenney adapt vs. Piskel custom (see Next up).
 - **Drift v1 known issues**: scope TBD.
 - **Ink pre-compilation architecture**: see Next up item 2.
-- **Bundle comment trimming**: the CI bundle restores full vendored-lib comments (~70 KB). If session fetch cost becomes a concern, `build-bundle.sh` could strip comments from the vendored libraries. Not worth doing now.
+- **PR merge order**: PRs #1-#6 all target main from the same base commit. Merge order is arbitrary; expect STATE.md conflicts — resolve by keeping all session log entries.
+- **Branch creation blocked in MCP**: The `mcp__github__*` server can't create branches (403); `mcp__GitHub__*` can. Use `mcp__GitHub__push_files` for future branch creation.
 
 ## Notes for the next session
 
-- **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
-- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
+- **5 draft PRs open** (#1/#5 GitHub releases, #2 registry validation, #3 scaffolding, #4 balance-diminish, #6 ParallaxBackground+Clown Brawler). Plus this PR (#7, build manifests). All target `main` from the same base commit. Merge order is arbitrary.
+- **Every game now has a build manifest.** Once the PRs land, all seven games will build and appear on the rolling release.
+- **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module.
+- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
-- **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
-- **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
-- **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
+- **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
-- **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
-- **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.
-- **Tween build-order**: no dependencies; include before game scripts.
-- **`create_or_update_file` over `push_files` for large single files.** More reliable for files >20 KB. Large single-file pushes up to ~80 KB are reliable; beyond that, use the pipeline (this is exactly why the engine bundle moved to CI).
 - **Drift concat order**: `engine/lib/inkjs.js` -> `engine/engine.bundle.js` -> `scripts/bootstrap.js` -> `scripts/pause-overlay.js` -> `games/drift/encounters/sources.js` -> scenes -> `bootstrapGame({...})`.
-- **Node.js 24 opt-in** active via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` in both workflows. No-op after June 2, 2026.
-- **Dead files**: `grep -r DEAD-FILE` to enumerate.
+- **Dead files**: `grep -r DEAD-FILE` to enumerate. `survivors-levelup.js` is dead and excluded from the Survivors manifest.
+- **Use `mcp__GitHub__push_files` (uppercase) for file pushes.** The lowercase `mcp__github__push_files` returns 403 when creating branches.
