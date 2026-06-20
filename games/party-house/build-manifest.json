@@ -1,0 +1,13 @@
+{
+  "game": "party-house",
+  "title": "Party House",
+  "output": "build/party-house.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "games/party-house/scenes/menu.js",
+    "games/party-house/scenes/match.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'party-house', presets: { regular: { w: 960, h: 540 } }, initialScene: (g) => new PHMenuScene(g) });"
+}

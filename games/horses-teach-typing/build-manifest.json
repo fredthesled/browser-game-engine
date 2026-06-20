@@ -1,0 +1,14 @@
+{
+  "game": "horses-teach-typing",
+  "title": "Horses Teach Typing",
+  "output": "build/horses-teach-typing.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "games/horses-teach-typing/scripts/rhythm-letter.js",
+    "games/horses-teach-typing/scenes/htt-menu.js",
+    "games/horses-teach-typing/scenes/htt-match.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', presets: { regular: { w: 800, h: 500 } }, initialScene: (g) => new HTTMenuScene(g) });"
+}
