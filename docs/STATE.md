@@ -1,14 +1,36 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
 Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
 
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives + `Engine.Balance.diminish` softcap (ADR-0020, ADR-0025), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), registry validation in CI (ADR-0023), and game scaffolding script (ADR-0024).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (Engine.Balance.diminish, ADR-0025):**
+
+1. **`Engine.Balance.diminish(x, opts)` added to `engine/balance.js`.** Returns `x / (x + k)`, mapping `[0, ∞)` to `[0, 1)`. `opts.k` defaults to 100 (the "half-point": the armor/resistance value that produces exactly 50% mitigation). The function is pure and stateless, consistent with the rest of `Engine.Balance`. Editing `balance.js` triggers CI bundle regeneration (ADR-0021); no manual bundle work required.
+
+2. **`docs/resources/balance.md` updated.** The softcap/armor row promoted from "deferred" to "implemented" in the mechanic table. `diminish` description moved from the Deferred section to the Implemented section with full formula and use-case notes. The Deferred section's first entry is now multiplicative damage.
+
+3. **ADR-0025 added to `docs/DECISIONS.md`.**
+
+## Previously done
+
+**Session 2026-06-20 (game scaffolding script, ADR-0024):**
+
+1. **`scripts/scaffold-game.sh` added.** Takes `<name>` (game slug) and `<title>` (display name) as arguments. Validates that the slug is lowercase/URL-safe and that `games/<name>/` doesn't already exist. Creates `games/<name>/scenes/menu.js` (a working placeholder MenuScene) and `games/<name>/build-manifest.json` (wired to `bootstrapGame`, ready for the CI build pipeline). Validates the slug regex before touching the filesystem.
+
+2. **`.github/workflows/scaffold.yml` added (ADR-0024).** `workflow_dispatch` workflow with two inputs: `name` and `title`. Runs `scaffold-game.sh` and commits the two created files back to the repo via `stefanzweifel/git-auto-commit-action@v5`. Follows the same patterns as `build.yml` and `bundle.yml` (Node 24 opt-in, Read and write permissions required for the commit-back step).
+
+3. **ADR-0024 added to `docs/DECISIONS.md`.**
+
+**Session 2026-06-20 (registry validation in CI, ADR-0023):** Registry validation step added to `validate` job in `build.yml`. Scans `scripts/` and `scenes/` at maxdepth 1; asserts each `.js` filename appears in its folder's `_registry.md`. All 9 current root files pass.
+
+**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -24,14 +46,12 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 6. **Docs updated.** `docs/DECISIONS.md` (ADR-0020, ADR-0021, and supersession notes on ADR-0016), `docs/ARCHITECTURE.md` (balance module in the table, file layout, concat order, and a Balance class contract; CI bundle rule), `CLAUDE.md` (§8 rules above plus retro 9b and a §4 note that emitting large files in one call is a known-weak operation).
 
-## Previously done
-
 - **Session 2026-05-26 (raster asset pipeline + animation communication format):** `scripts/build-game.sh` gained a functional `"assets"` array (base64-inlines PNG/JPG/WebP/GIF into an `ASSETS` global before sources); `docs/resources/assets.md` gained an asset-pipeline section and Piskel; `docs/ANIM_CONFIG.md` committed, defining the sprite-sheet sidecar (`<sheet>.anim.json`) and parallax sidecar (`parallax.anim.json`) formats.
 - See prior STATE entries: engine modules, Pong, Survivors v1-v3, Clown Brawler v1-v2, Party House, HTT, Minesweeper, Drift v1, SpriteSheet and ShapeSprite scripts, engine bundle convention, ADR-0017 visual language, ADR-0018 optional vendored library pattern, bootstrapGame, inkjs + Engine.Narrative, Tween utility, ShapeSprite.onDone and easing.
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. `Engine.Balance` (difficulty, cost, and diminish primitives) is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp, upgrade economy, or armor/damage-reduction mechanic.
 
 ## Next up
 
@@ -46,7 +66,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Balance primitive expansion
 
-`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
+`Engine.Balance` (ADR-0020, ADR-0025) now covers difficulty curves, cost scaling, and diminishing returns. The remaining deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively. The natural next candidate is multiplicative damage (`atk * k / (k + def)`) for any game with a combat system.
 
 ### ParallaxBackground script
 
@@ -54,10 +74,10 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
-3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
-4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
+3. ~~**Game scaffolding script.**~~ Done (ADR-0024). `scripts/scaffold-game.sh` + `.github/workflows/scaffold.yml`. Dispatch with `name` + `title` to create a game skeleton.
+4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
 ### Other game work
 
@@ -99,7 +119,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 ## Notes for the next session
 
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
-- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
+- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap. Implemented: `difficulty`, `cost`, `bulkCost`, `maxAffordable`, `diminish`. Next deferred: multiplicative damage `atk * k / (k + def)`.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
 - **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
@@ -111,4 +131,5 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **`create_or_update_file` over `push_files` for large single files.** More reliable for files >20 KB. Large single-file pushes up to ~80 KB are reliable; beyond that, use the pipeline (this is exactly why the engine bundle moved to CI).
 - **Drift concat order**: `engine/lib/inkjs.js` -> `engine/engine.bundle.js` -> `scripts/bootstrap.js` -> `scripts/pause-overlay.js` -> `games/drift/encounters/sources.js` -> scenes -> `bootstrapGame({...})`.
 - **Node.js 24 opt-in** active via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` in both workflows. No-op after June 2, 2026.
+- **Scaffold new games** via the Actions tab: `.github/workflows/scaffold.yml`, inputs `name` (slug) and `title`. Creates `games/<name>/build-manifest.json` and `games/<name>/scenes/menu.js` automatically.
 - **Dead files**: `grep -r DEAD-FILE` to enumerate.
