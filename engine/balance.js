@@ -63,6 +63,16 @@ const Balance = {
     if (rate === 1) return Math.floor(currency / base);
     const n = Math.log((currency * (rate - 1)) / (base * Math.pow(rate, owned)) + 1) / Math.log(rate);
     return Math.max(0, Math.floor(n));
+  },
+
+  // --- Diminishing returns / softcap ----------------------------------------
+  // diminish(x, opts): maps [0, ∞) to [0, 1) via x / (x + k).
+  // k is the "half-point": the x value that produces a 50% output.
+  // Default k=100 (suitable for armor values 0-500).
+  // Common uses: armor mitigation, damage reduction, stat softcaps.
+  diminish(x, opts = {}) {
+    const k = opts.k ?? 100;
+    return x / (x + k);
   }
 };
 

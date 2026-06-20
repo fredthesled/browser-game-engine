@@ -12,7 +12,7 @@ than what is distilled here.
 |---|---|---|
 | Difficulty ramp, wave intensity, level-up pacing | `difficulty(t)`, default logistic | implemented |
 | Upgrade / building / unit pricing | `cost(n)`; bulk via `bulkCost`; affordability via `maxAffordable` | implemented |
-| Armor, damage reduction, softcap | `reduce(x, k) = x/(x+k)` | deferred |
+| Armor, damage reduction, softcap | `diminish(x, k) = x/(x+k)` | implemented |
 | Base attack vs defense | multiplicative `atk * k/(k+def)` | deferred |
 | Proc / crit / drop with anti-streak | pseudo-random distribution plus pity timer | deferred |
 | XP to next level | cubic, exponential (RuneScape form), or quadratic | deferred |
@@ -55,6 +55,20 @@ Clicker Heroes cost reference.
 Closed-form inverse of `bulkCost`: how many units `currency` buys starting from
 `owned`: `floor( log_rate( (currency*(rate-1)) / (base*rate^owned) + 1 ) )`.
 
+### `diminish(x, opts)`
+
+Diminishing-returns softcap. Maps `[0, ∞)` to `[0, 1)` via `x / (x + k)`.
+`opts.k` is the "half-point": the value of `x` that produces exactly 50% output.
+Default `k=100`, convenient for armor-range inputs (0–500).
+
+Common uses: armor mitigation, damage reduction, any stat that benefits from
+stacking but should plateau gracefully.
+
+Under this formula, effective health `HP / (1 − DR)` is linear in `x`, so each
+armor point adds a constant survivability increment regardless of how much armor
+the player already has. No finite value of `x` grants complete immunity (the
+output approaches but never reaches 1).
+
 All functions use nullish-coalescing defaults, so an explicit `0` (for example
 `d0: 0`) is respected rather than overridden by the default.
 
@@ -63,10 +77,6 @@ All functions use nullish-coalescing defaults, so an explicit `0` (for example
 Future increments extend `Engine.Balance`. Formulas are recorded here so the
 next session does not re-derive them. Each is its own ADR and commit.
 
-- **Diminishing returns / softcap / armor**: `reduce(x, k) = x / (x + k)`. `k`
-  is the value of `x` at which the effect reaches 50%. Under this form,
-  effective health `HP / (1 - DR)` is linear in armor, so each armor point adds
-  a constant amount of survivability.
 - **Multiplicative damage**: `damage = atk * k / (k + def)` (`k` default 100).
   Never reaches zero and has smooth diminishing returns. Additive alternative
   `max(1, atk - def)` suits tactical games but is brittle (high defense drives
@@ -98,6 +108,8 @@ next session does not re-derive them. Each is its own ADR and commit.
   Clicker 1.15. The default 1.10 is the midpoint.
 - **Logistic for difficulty**: bounds maximum difficulty (the plateau) while
   front-loading an easy onboarding, which is the general-purpose pacing shape.
+- **Diminish k=100**: at k=100, armor 100 gives 50% DR, armor 300 gives 75%,
+  armor 900 gives 90%. Adjusting k scales all values proportionally.
 - **DDA target ~0.5 success**: a flow-channel engineering convention, not a
   proven enjoyment optimum.
 
