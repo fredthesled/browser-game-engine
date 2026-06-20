@@ -114,3 +114,19 @@ jobs:
           file_pattern: build/*.html
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      # Publishes a rolling GitHub Release tagged "latest-build" so every game
+      # has a permanent, shareable download URL. The old release is deleted and
+      # recreated on each push so the tag always points at HEAD.
+      - name: Publish builds as rolling GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Remove any existing latest-build release and its tag.
+          gh release delete latest-build --yes 2>/dev/null || true
+          git push origin :refs/tags/latest-build 2>/dev/null || true
+          # Create a fresh release with every built game as an asset.
+          gh release create latest-build build/*.html \
+            --title "Latest Build" \
+            --notes "Self-contained game builds from the latest push to main. Each .html file is a playable game — download and open in any browser, no server needed." \
+            --prerelease

@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,12 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (GitHub Releases rolling publish):**
+
+1. **Rolling `latest-build` GitHub Release added to `.github/workflows/build.yml`.** After each game build on main, the CI job deletes any existing `latest-build` release and recreates it with all `build/*.html` files as assets. Every game now has a permanent, shareable download URL — `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<name>.html` — with no server required. Uses `gh release create` (available on all GitHub-hosted runners). The release is marked `--prerelease` so it does not surface as the repository's "latest release". Pipeline improvement #1 from the roadmap, now done.
+
+## Previously done
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -54,7 +60,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Done (2026-06-20). Rolling `latest-build` release publishes all `build/*.html` files as assets on every main push.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
 3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
 4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
@@ -98,6 +104,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ## Notes for the next session
 
+- **Game builds have permanent download URLs.** `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<name>.html`. The rolling `latest-build` release is recreated on every main push by `.github/workflows/build.yml`. Marked `--prerelease` so it doesn't surface as "latest release".
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
 - **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
