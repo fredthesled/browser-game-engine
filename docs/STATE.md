@@ -1,14 +1,24 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
 Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
 
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), and registry validation in CI (ADR-0023).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (registry validation in CI):**
+
+1. **ADR-0023: registry validation step in `validate` job.** Added a "Verify root scripts/ and scenes/ have registry entries" step to `.github/workflows/build.yml`. After the JS syntax check, the step finds every root-level `.js` in `scripts/` and `scenes/` (maxdepth 1, so game subdirs are not scanned) and asserts each filename appears in its folder's `_registry.md`. Fails the build with a clear MISSING message if any file is unregistered. Tested locally — all 9 current root files pass. Also updated the workflow header comment to mention the registry check.
+
+2. **ADR-0023 added to `docs/DECISIONS.md`.**
+
+## Previously done
+
+**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -54,10 +64,10 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
 3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
-4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
+4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
 ### Other game work
 
