@@ -1,0 +1,64 @@
+# =============================================================================
+# .github/workflows/scaffold.yml
+# =============================================================================
+# Creates a new game skeleton under games/<name>/ on workflow_dispatch.
+#
+# Inputs:
+#   name    Game slug (lowercase letters, digits, hyphens). Becomes the
+#           directory name, output filename, and gameName passed to
+#           bootstrapGame.
+#   title   Display title. Used in the HTML <title> and the placeholder scene.
+#
+# Creates and commits to main:
+#   games/<name>/build-manifest.json     — manifest skeleton for build.yml
+#   games/<name>/scenes/menu.js          — placeholder MenuScene
+#
+# After the workflow commits, edit the scene and manifest, add game logic,
+# and register any new shared scripts in scripts/_registry.md (ADR-0023).
+# The build pipeline (ADR-0019) discovers the manifest automatically.
+#
+# Permissions required:
+#   Settings > Actions > General > Workflow permissions must be set to
+#   "Read and write permissions" for the commit-back step to succeed.
+# =============================================================================
+
+name: Scaffold New Game
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Game slug — lowercase letters, digits, hyphens (e.g. "snake")'
+        required: true
+        type: string
+      title:
+        description: 'Display title (e.g. "Snake")'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run scaffold script
+        run: |
+          chmod +x scripts/scaffold-game.sh
+          bash scripts/scaffold-game.sh "${{ github.event.inputs.name }}" "${{ github.event.inputs.title }}"
+
+      - name: Commit scaffolded files
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "scaffold: create games/${{ github.event.inputs.name }} skeleton"
+          file_pattern: "games/${{ github.event.inputs.name }}/**"
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
