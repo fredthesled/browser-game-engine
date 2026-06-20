@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,18 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (build manifests for all remaining games):**
+
+Added `build-manifest.json` files for the six games that had none: pong, survivors, clown-brawler, minesweeper, party-house, and horses-teach-typing. All manifests were locally built and verified against `scripts/build-game.sh` before commit. CI will now regenerate these games on every push to main alongside drift, libromancer, and survivors-balance.
+
+Manifest specifics:
+- **pong** (800x600): engine.bundle + bootstrap + rect-renderer + collider + 3 scripts + 2 scenes. No PauseOverlay (retrofit is deferred per STATE).
+- **survivors** (800x600): engine.bundle + bootstrap + pause-overlay + rect-renderer + collider + 4 scripts + 3 scenes. Excludes survivors-levelup.js (not wired into the game flow in this version).
+- **clown-brawler** (800x500): engine.bundle + bootstrap + pause-overlay + shape-sprite + 3 scripts + 2 scenes. Uses `Engine.ShapeSprite` (from shape-sprite.js) for all visuals.
+- **minesweeper** (900x600): engine.bundle + bootstrap + pause-overlay + 2 scenes. `suppressContextMenu: true` because right-click flags mines.
+- **party-house** (960x540): engine.bundle + bootstrap + pause-overlay + 2 scenes. 960x540 matched the canvas dimensions in the old hand-built HTML.
+- **horses-teach-typing** (800x500): engine.bundle + bootstrap + pause-overlay + rhythm-letter.js script + 2 scenes. 800x500 matched the old hand-built canvas.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,7 +43,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. All nine games (pong, survivors, clown-brawler, minesweeper, party-house, horses-teach-typing, drift, libromancer, survivors-balance) now have build manifests and are assembled by CI on every push to main.
 
 ## Next up
 
@@ -64,7 +76,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 5. **Drift v1 bug fixes.**
 6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
 7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
-8. **Build manifests for existing games.** Add when each game is next touched.
+8. ~~**Build manifests for existing games.**~~ Done (session 2026-06-20).
 
 ## Deferred to shipping mode
 
