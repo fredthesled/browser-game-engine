@@ -67,3 +67,64 @@ const Balance = {
 };
 
 Engine.Balance = Balance;
+
+// Engine.Balance.DDA — Dynamic Difficulty Adjustment controller.
+// Stateful; construct one instance per session. Call observe(outcome) each
+// round or frame (outcome: 1=success, 0=failure; fractional [0,1] for partial
+// credit). Read .difficulty after each call; it is normalised to [0, 1] —
+// scale it to your own parameter range.
+//
+// Design: EWMA smooths the noisy performance signal; proportional correction
+// nudges difficulty toward the target success rate; the dead-zone ignores
+// micro-fluctuations; the dwell gate requires the controller to stay in one
+// direction for minDwell active observations before it is allowed to reverse,
+// preventing the oscillation failure mode ("too-hard → too-easy → repeat").
+// Adjust pacing (wave timing, spawn rate) before amplitude (damage numbers)
+// — the Left 4 Dead principle.
+//
+// opts:
+//   alpha    — EWMA smoothing factor; lower = slower to react (default 0.1)
+//   target   — desired success rate in [0,1] (default 0.5)
+//   K        — proportional gain; fraction of difficulty range per step (default 0.1)
+//   deadZone — |error| below which no adjustment fires (default 0.1)
+//   minDwell — active observations before direction reversal is permitted (default 10)
+//   initial  — starting difficulty in [0,1] (default 0.5)
+Engine.Balance.DDA = class {
+  constructor(opts = {}) {
+    this._alpha    = opts.alpha    ?? 0.1;
+    this._target   = opts.target   ?? 0.5;
+    this._K        = opts.K        ?? 0.1;
+    this._deadZone = opts.deadZone ?? 0.1;
+    this._minDwell = opts.minDwell ?? 10;
+    this.difficulty = opts.initial ?? 0.5;
+    this.score      = this._target;
+    this._lastDir   = 0;
+    this._dwell     = 0;
+  }
+
+  // Feed one observation. Returns the (possibly updated) difficulty.
+  observe(outcome) {
+    this.score = this._alpha * outcome + (1 - this._alpha) * this.score;
+    const error = this.score - this._target;
+    if (Math.abs(error) < this._deadZone) return this.difficulty;
+    const dir = error > 0 ? 1 : -1;
+    if (this._lastDir !== 0 && dir !== this._lastDir) {
+      // Wants to reverse — require minDwell active observations in current direction first.
+      if (++this._dwell < this._minDwell) return this.difficulty;
+      this._dwell = 0;
+    } else {
+      this._dwell++;
+    }
+    this._lastDir = dir;
+    this.difficulty = Math.max(0, Math.min(1, this.difficulty + this._K * error));
+    return this.difficulty;
+  }
+
+  // Reset to initial state (e.g., between levels).
+  reset(opts = {}) {
+    this.difficulty = opts.initial ?? 0.5;
+    this.score      = this._target;
+    this._lastDir   = 0;
+    this._dwell     = 0;
+  }
+};

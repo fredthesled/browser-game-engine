@@ -16,7 +16,7 @@ than what is distilled here.
 | Base attack vs defense | multiplicative `atk * k/(k+def)` | deferred |
 | Proc / crit / drop with anti-streak | pseudo-random distribution plus pity timer | deferred |
 | XP to next level | cubic, exponential (RuneScape form), or quadratic | deferred |
-| Auto difficulty from player performance | DDA controller (EWMA + proportional + dead-zone) | deferred |
+| Auto difficulty from player performance | `new Engine.Balance.DDA(opts)` | implemented |
 | Prestige / reset reward | cube-root (or sqrt) of lifetime earnings | deferred |
 
 ## Implemented primitives (`engine/balance.js`)
@@ -58,6 +58,41 @@ Closed-form inverse of `bulkCost`: how many units `currency` buys starting from
 All functions use nullish-coalescing defaults, so an explicit `0` (for example
 `d0: 0`) is respected rather than overridden by the default.
 
+### `new Engine.Balance.DDA(opts)`
+
+Dynamic difficulty adjustment controller. Unlike the functions above this is
+**stateful** (construct one instance per game session) and lives as a class
+under `Engine.Balance`.
+
+Algorithm: EWMA smooths the noisy performance signal; proportional correction
+nudges `difficulty` toward `target`; the dead-zone ignores micro-fluctuations;
+the dwell gate requires the controller to commit to one direction for `minDwell`
+active observations before reversing, preventing oscillation.
+
+API:
+
+- `new Engine.Balance.DDA(opts)` — create a controller.
+- `dda.observe(outcome)` — feed one observation (1 = success, 0 = failure;
+  fractional values for partial credit accepted). Returns current `difficulty`.
+- `dda.difficulty` — normalised output in [0, 1]; multiply by your own scale.
+- `dda.score` — current EWMA performance estimate.
+- `dda.reset(opts)` — reset to initial state (e.g., between levels).
+
+Default constants:
+
+| opt | default | meaning |
+|---|---|---|
+| `alpha` | 0.1 | EWMA smoothing (low = slow to react) |
+| `target` | 0.5 | desired success rate |
+| `K` | 0.1 | proportional gain per observation |
+| `deadZone` | 0.1 | minimum \|error\| to fire an adjustment |
+| `minDwell` | 10 | observations before direction reversal |
+| `initial` | 0.5 | starting difficulty |
+
+Practical guidance: adjust *pacing* (wave timing, spawn rate) before *amplitude*
+(damage numbers) — the Left 4 Dead principle. The 50% target is an engineering
+starting point, not an enjoyment optimum; tune against retention metrics.
+
 ## Deferred primitives (roadmap)
 
 Future increments extend `Engine.Balance`. Formulas are recorded here so the
@@ -82,14 +117,11 @@ next session does not re-derive them. Each is its own ADR and commit.
 - **Prestige / reset reward**: `floor((lifetime / scale)^(1/3))` (cube root,
   Cookie Clicker; the cost of the x-th prestige point grows as x^3). A
   square-root variant gives gentler, faster repeat prestige.
-- **Dynamic difficulty adjustment (DDA)**: smooth the performance signal with an
-  EWMA `score = a*obs + (1-a)*score` (`a` ~ 0.1); correct proportionally
-  `difficulty += K * (target - score)` (`target` ~ 0.5, `K` ~ 0.1 of the
-  difficulty range); apply a dead-zone (~0.1) and a minimum dwell time before
-  reversing direction, to prevent oscillation. Oscillation (retuning from
-  too-hard to no-challenge and back) is the overcorrection failure mode this
-  whole effort targets. Adjust pacing before amplitude (the Left 4 Dead
-  principle).
+- **Dynamic difficulty adjustment (DDA)**: implemented as `Engine.Balance.DDA`
+  (see above). Remaining sub-feature: expose a `mode` toggle that adjusts only
+  pacing parameters (spawn interval, wave cadence) before falling back to
+  amplitude (damage, enemy HP), enforcing the Left 4 Dead principle in code
+  rather than by convention.
 
 ## Key constants and rationale
 

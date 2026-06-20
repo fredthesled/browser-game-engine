@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,18 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (Engine.Balance.DDA — dynamic difficulty adjustment):**
+
+1. **`Engine.Balance.DDA` added to `engine/balance.js`.** Unlike the existing pure-function primitives, `DDA` is a stateful class (one instance per game session). Algorithm: EWMA smooths the performance signal (`alpha` default 0.1), proportional correction nudges `difficulty` toward `target` success rate (default 0.5), a dead-zone (`deadZone` default 0.1) suppresses micro-fluctuations, and a dwell gate (`minDwell` default 10 active observations) prevents direction reversal, eliminating the oscillation failure mode. `difficulty` is normalised to [0, 1]; games scale to their own range. API: `observe(outcome)` feeds a result (1=success, 0=failure, fractional for partial credit); `reset(opts)` clears state between levels. Verified with 8 Node.js assertions covering construction, monotone increase/decrease under sustained outcomes, dead-zone hold, dwell-gate reversal block, reset, custom opts, and partial-credit outcomes.
+
+2. **`docs/resources/balance.md` updated.** DDA row in the mechanic table promoted from "deferred" to "implemented". `new Engine.Balance.DDA(opts)` section added to Implemented primitives with full parameter table and guidance. Deferred DDA entry replaced with a note on the remaining sub-feature (pacing-before-amplitude `mode` toggle).
+
+CI (`bundle.yml`) will regenerate `engine/engine.bundle.js` on merge; no manual bundle work needed.
+
+**Note:** Multiple open draft PRs cover other items from the Next up list (PRs #1-#13 all base on the same main SHA `9dbb232`). ADR numbers in those PRs are provisional; renumber sequentially from ADR-0022 on merge.
+
+---
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,7 +43,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. Multiple open PRs (#1-#13) cover pipeline improvements, balance primitives, and game work. `Engine.Balance.DDA` (this session) completes the last deferred balance primitive from ADR-0020.
 
 ## Next up
 
@@ -46,7 +58,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Balance primitive expansion
 
-`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
+`Engine.Balance` (ADR-0020) now covers: difficulty curves, cost scaling (`cost`/`bulkCost`/`maxAffordable`), diminishing returns (`diminish` — PR #4), multiplicative damage (`damage` — PR #8), XP curves (`xp` — PR #11), prestige rewards (`prestige` — PR #11), and dynamic difficulty adjustment (`DDA` — this session). All deferred primitives from `docs/resources/balance.md` are implemented or covered in open PRs. Remaining roadmap item: pity-timer / pseudo-random distribution primitive (depends on `Engine.PRNG` from PR #9).
 
 ### ParallaxBackground script
 
