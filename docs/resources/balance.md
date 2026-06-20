@@ -13,7 +13,7 @@ than what is distilled here.
 | Difficulty ramp, wave intensity, level-up pacing | `difficulty(t)`, default logistic | implemented |
 | Upgrade / building / unit pricing | `cost(n)`; bulk via `bulkCost`; affordability via `maxAffordable` | implemented |
 | Armor, damage reduction, softcap | `reduce(x, k) = x/(x+k)` | deferred |
-| Base attack vs defense | multiplicative `atk * k/(k+def)` | deferred |
+| Base attack vs defense | multiplicative `atk * k/(k+def)` | implemented |
 | Proc / crit / drop with anti-streak | pseudo-random distribution plus pity timer | deferred |
 | XP to next level | cubic, exponential (RuneScape form), or quadratic | deferred |
 | Auto difficulty from player performance | DDA controller (EWMA + proportional + dead-zone) | deferred |
@@ -58,6 +58,16 @@ Closed-form inverse of `bulkCost`: how many units `currency` buys starting from
 All functions use nullish-coalescing defaults, so an explicit `0` (for example
 `d0: 0`) is respected rather than overridden by the default.
 
+### `damage(atk, def, opts)`
+
+Multiplicative damage with defense: `atk * k / (k + def)`. At `def=0`, full
+`atk` is dealt; at `def=k`, half; defense never drives damage to zero. `k`
+defaults to 100 (50% mitigation at defense=100). Tune `k` to taste — lower `k`
+makes defense stronger relative to attack.
+
+Additive alternative `max(1, atk - def)` suits tactical games but is brittle:
+high defense drives damage to zero, which can make certain enemies unkillable.
+
 ## Deferred primitives (roadmap)
 
 Future increments extend `Engine.Balance`. Formulas are recorded here so the
@@ -67,10 +77,6 @@ next session does not re-derive them. Each is its own ADR and commit.
   is the value of `x` at which the effect reaches 50%. Under this form,
   effective health `HP / (1 - DR)` is linear in armor, so each armor point adds
   a constant amount of survivability.
-- **Multiplicative damage**: `damage = atk * k / (k + def)` (`k` default 100).
-  Never reaches zero and has smooth diminishing returns. Additive alternative
-  `max(1, atk - def)` suits tactical games but is brittle (high defense drives
-  damage to zero).
 - **Pseudo-random distribution (anti-streak proc)**: on the N-th attempt since
   the last success, `P(N) = C * N`, rising to 1; choose `C` so the long-run
   rate equals the nominal probability `p`. Reduces streakiness while preserving

@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,16 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (Drift crew AI + Balance.damage):**
+
+1. **`_redistributeCrew()` implemented in `games/drift/scenes/match.js`.** The stub that had been commented out since Drift v1 is now live. After each encounter resolves, `_redistributeCrew()` fills any vacant critical room (helm → weapons → shields → engines) from idle crew in the medical bay first, then from surplus members in rooms with more than one active crew. Uses a snapshot of counts before any moves to avoid order-dependent bugs. The crew header comment updated to remove the "deferred" note.
+
+2. **`Engine.Balance.damage(atk, def, opts)` added to `engine/balance.js`.** Multiplicative damage formula: `atk * k / (k + def)`, `k` defaulting to 100. At `def=0`, full `atk` is dealt; at `def=k`, half; defense never drives damage to zero. `docs/resources/balance.md` updated: "Base attack vs defense" row promoted from deferred to implemented; a `damage` subsection added under Implemented primitives (matching the style of existing entries). Editing `engine/balance.js` triggers CI bundle regeneration (ADR-0021) — no manual bundle work needed.
+
+**Note on open PRs:** Six draft PRs (#1–#7, minus #4 which uses `claude/balance-diminish`) are queued on the same base commit as this session. All touch `docs/STATE.md` and some touch `docs/DECISIONS.md`; ADR numbers in those PRs will collide on merge. Resolve by renumbering sequentially from ADR-0022 after merging, keeping all session log entries in STATE.md.
+
+## What was done in the most recent session (prior)
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,7 +41,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. Six PRs (#1–#3, #5–#7) and PR #4 are queued for review. ADR renumbering needed on merge. Drift crew redistribution is live; balance primitives growing incrementally.
 
 ## Next up
 
@@ -46,7 +56,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Balance primitive expansion
 
-`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
+`Engine.Balance` (ADR-0020) currently covers difficulty curves, cost scaling, and multiplicative damage. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
 
 ### ParallaxBackground script
 
@@ -62,7 +72,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 ### Other game work
 
 5. **Drift v1 bug fixes.**
-6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
+6. ~~**Drift crew AI.** `_redistributeCrew()` implemented (session 2026-06-20).~~
 7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
 8. **Build manifests for existing games.** Add when each game is next touched.
 
@@ -112,3 +122,4 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Drift concat order**: `engine/lib/inkjs.js` -> `engine/engine.bundle.js` -> `scripts/bootstrap.js` -> `scripts/pause-overlay.js` -> `games/drift/encounters/sources.js` -> scenes -> `bootstrapGame({...})`.
 - **Node.js 24 opt-in** active via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` in both workflows. No-op after June 2, 2026.
 - **Dead files**: `grep -r DEAD-FILE` to enumerate.
+- **PUSH BLOCKER (session 2026-06-20):** This session's branch `claude/youthful-maxwell-x3bqxe` could not be pushed to GitHub — all write operations return 403 (both git push and GitHub API). The code is committed locally. The next session should push these changes or re-apply them: `_redistributeCrew()` in `games/drift/scenes/match.js` and `Engine.Balance.damage()` in `engine/balance.js`.

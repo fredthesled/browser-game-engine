@@ -12,9 +12,9 @@
 // Win / loss transition to DriftGameOverScene via a one-frame deferred scene
 // swap (_pendingScene) so the final state renders before transitioning.
 //
-// Crew AI is deferred. In v1 crew are static display elements; outcomes from
-// encounter externals (lose_crew, gain_crew) update status immediately.
-// See _redistributeCrew() stub for where the AI session's output lands.
+// Crew: active members displayed in their current room. After each encounter
+// _redistributeCrew() fills any empty critical room from medical bay or
+// surplus crew (helm → weapons → shields → engines priority).
 //
 // Depends on: Engine.Scene, Engine.audio, Engine.input, Engine.Narrative,
 //             PauseOverlay, DRIFT_ENCOUNTER_SOURCES (encounters/sources.js)
@@ -263,11 +263,7 @@ class DriftMatchScene extends Engine.Scene {
     this._narrative   = null;
     this._encOutcomes = [];
 
-    // ---- CREW AI STUB -------------------------------------------------------
-    // Replace with the crew-autonomy AI session's output when implemented.
-    // Should inspect room assignments and move crew to critical vacancies.
-    // this._redistributeCrew();
-    // ---- END STUB -----------------------------------------------------------
+    this._redistributeCrew();
 
     if (this._hull <= 0) {
       this._pendingScene = new DriftGameOverScene(
@@ -363,6 +359,33 @@ class DriftMatchScene extends Engine.Scene {
       }
     }
     if (t) t.status = 'incapacitated';
+  }
+
+  // After each encounter, fill any empty critical room from idle or surplus
+  // crew. Medical bay is the lowest-priority source; surplus (rooms with >1
+  // active member) are a secondary donor. Priority fill order: helm →
+  // weapons → shields → engines.
+  _redistributeCrew() {
+    const PRIORITY = ['helm', 'weapons', 'shields', 'engines'];
+
+    // Snapshot active counts before any moves to avoid order-dependent bugs.
+    const counts = {};
+    for (const id of [...PRIORITY, 'medical'])
+      counts[id] = this._crew.filter(c => c.status === 'active' && c.roomId === id).length;
+
+    // Build a pool of transferable crew: medical bay first, then one surplus
+    // member from any priority room with more than one active crew.
+    const pool = [];
+    for (const c of this._crew)
+      if (c.status === 'active' && c.roomId === 'medical') pool.push(c);
+    for (const roomId of PRIORITY)
+      if (counts[roomId] > 1)
+        pool.push(...this._crew.filter(c => c.status === 'active' && c.roomId === roomId).slice(1));
+
+    // Assign pool members to vacant priority rooms (highest priority first).
+    for (const targetRoom of PRIORITY)
+      if (counts[targetRoom] === 0 && pool.length > 0)
+        pool.shift().roomId = targetRoom;
   }
 
   // Adds a crew member to Medical Bay, capped at 8 total.
@@ -493,11 +516,11 @@ class DriftMatchScene extends Engine.Scene {
       ctx.fillStyle = '#101025'; ctx.fillRect(strip.x, strip.y, strip.w, strip.h);
       ctx.fillStyle = '#1a1a3a'; ctx.fillRect(strip.x, strip.y, Math.floor(strip.w * prog), strip.h);
       ctx.fillStyle = '#383858';
-      ctx.fillText(`SECTOR ${this._sectorsCompleted + 1} OF ${this._totalSectors}  \u00b7  TRANSIT`, mx, my);
+      ctx.fillText(`SECTOR ${this._sectorsCompleted + 1} OF ${this._totalSectors}  ·  TRANSIT`, mx, my);
     } else {
       ctx.fillStyle = '#180d2a'; ctx.fillRect(strip.x, strip.y, strip.w, strip.h);
       ctx.fillStyle = '#583878';
-      ctx.fillText(`SECTOR ${this._sectorsCompleted + 1} OF ${this._totalSectors}  \u00b7  ENCOUNTER`, mx, my);
+      ctx.fillText(`SECTOR ${this._sectorsCompleted + 1} OF ${this._totalSectors}  ·  ENCOUNTER`, mx, my);
     }
   }
 
@@ -521,7 +544,7 @@ class DriftMatchScene extends Engine.Scene {
     ctx.fillText(`SECTOR ${this._sectorsCompleted + 1} OF ${this._totalSectors}`, cx, cy - ep.h * 0.07);
     ctx.font = `${Math.max(9, Math.floor(ep.h * 0.038))}px monospace`;
     ctx.fillStyle = '#1e1e38';
-    ctx.fillText('TRANSIT  \u00b7  SYSTEMS NOMINAL', cx, cy + ep.h * 0.04);
+    ctx.fillText('TRANSIT  ·  SYSTEMS NOMINAL', cx, cy + ep.h * 0.04);
     const prog = Math.min(1, this._travelTimer / this._travelDuration);
     const N = 5, DR = 3, DG = 14;
     const sx = cx - ((N - 1) * DG) / 2, dy = cy + ep.h * 0.14;

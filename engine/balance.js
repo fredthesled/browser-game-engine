@@ -63,6 +63,17 @@ const Balance = {
     if (rate === 1) return Math.floor(currency / base);
     const n = Math.log((currency * (rate - 1)) / (base * Math.pow(rate, owned)) + 1) / Math.log(rate);
     return Math.max(0, Math.floor(n));
+  },
+
+  // --- Damage formula -------------------------------------------------------
+  // damage(atk, def, opts): multiplicative damage with smooth diminishing
+  // returns on defense. Formula: atk * k / (k + def).
+  // At def=0: full atk; at def=k: atk/2; def never drives damage to zero.
+  // k defaults to 100 (50% mitigation at defense=100). Tune k to taste:
+  // lower k means defense is stronger relative to attack.
+  damage(atk, def, opts = {}) {
+    const k = opts.k ?? 100;
+    return atk * k / (k + def);
   }
 };
 
