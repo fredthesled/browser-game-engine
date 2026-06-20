@@ -114,3 +114,22 @@ jobs:
           file_pattern: build/*.html
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      # Creates or updates a rolling pre-release tagged "latest-build" with
+      # every game's self-contained HTML as a downloadable asset. Opening any
+      # downloaded .html in a browser runs the game — no server required.
+      # Using prerelease: true and make_latest: false keeps this out of the
+      # "Latest release" slot so future versioned releases can use that.
+      - name: Publish rolling release with all game builds
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: "Latest Build"
+          prerelease: true
+          make_latest: false
+          body: |
+            Auto-generated from commit ${{ github.sha }} on `${{ github.ref_name }}`.
+
+            Download any `.html` file below and open it in a browser — no server needed. Updated on every push to `main`.
+          files: build/*.html
+          fail_on_unmatched_files: false
