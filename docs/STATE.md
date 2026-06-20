@@ -1,14 +1,28 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
 Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
 
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
+Settled infrastructure: engine (13 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and `Engine.PRNG` seeded random number generator (ADR-0026).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (seeded PRNG module):**
+
+1. **`engine/prng.js` added (ADR-0026, pending renumber).** `Engine.PRNG`, a seeded pseudo-random number generator using the SFC32 algorithm (128-bit state, period ≥ 2^64). String seeds hashed to 128-bit state by cyrb128 (CC0). Integer seeds expanded via LCG. Both paths warm up with 15 discarded outputs. API: `float()` → [0,1); `int(min, max)` → inclusive integer; `pick(arr)` → random element; `shuffle(arr)` → Fisher-Yates in place. Enables reproducible procedural content (daily seeds, level gen, loot tables, replays) and multiple independent random streams per game. Implementation tested in Node.js before commit; verified determinism, distribution, and edge cases. Opt-in; engine core does not call it.
+
+2. **`engine/bundle-manifest.json` updated.** `engine/prng.js` added as the thirteenth bundled module. CI will regenerate `engine/engine.bundle.js` on merge; no manual bundle work.
+
+3. **`docs/DECISIONS.md` updated.** ADR-0026 added (note: numbered from main baseline; several open PRs claim ADR-0022–0025, to be renumbered sequentially after all PRs merge).
+
+4. **`docs/ARCHITECTURE.md` updated.** Module table updated (ten → eleven modules); PRNG row added; `Engine.PRNG` class contract section added; file layout and concat order updated (position 13); future-work note separated RNG shaping from Balance deferred list.
+
+5. **`docs/STATE.md` updated** (this entry).
+
+## Previously done
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,9 +45,13 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. `Engine.PRNG` is ready to use; no game consumes it yet. Natural first applications: a daily-challenge game (seed = date string), procedural level generation in Drift or a new game, or deterministic loot tables in Survivors. Several open PRs (see below) add pipeline improvements, balance primitives, and game content; they are all based on the same main-branch commit and will need STATE.md conflict resolution at merge time.
 
 ## Next up
+
+### Open PRs on the same base (review/merge backlog)
+
+Eight PRs are open, all based on the same main-branch commit (9dbb232). Expected ADR numbering conflicts (0022–0025 claimed by multiple PRs); resolve by renumbering sequentially after merging. STATE.md merge conflicts: keep all session log entries. PRs cover: GitHub Releases step (#1, #5 — two competing variants), registry validation (#2), game scaffolding (#3), Engine.Balance.diminish (#4), ParallaxBackground + Clown Brawler Tween (#6), build manifests for remaining games (#7), Drift crew AI + Engine.Balance.damage (#8).
 
 ### Immediate: first real raster asset
 
@@ -97,6 +115,8 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Bundle comment trimming**: the CI bundle restores full vendored-lib comments (~70 KB). If session fetch cost becomes a concern, `build-bundle.sh` could strip comments from the vendored libraries. Not worth doing now.
 
 ## Notes for the next session
+
+- **`Engine.PRNG` available.** `new Engine.PRNG(seed)` where seed is a string or integer. Returns an instance with `float()`, `int(min, max)`, `pick(arr)`, `shuffle(arr)`. String seeds (`'daily-2026-06-20'`) are reproducible; same string always produces the same sequence. Use one instance per independent random stream. The pseudo-random distribution (anti-streak proc) Balance primitive can now be built on top of it.
 
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
 - **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
