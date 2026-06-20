@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-19
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,10 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and rolling GitHub Releases with permanent public download URLs (ADR-0022).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (Minesweeper build manifest):**
+
+1. **Minesweeper build manifest added (`games/minesweeper/build-manifest.json`).** Puts Minesweeper on the CI build pipeline, fixing the "Minesweeper build bundle drift" deferred item. Concat order: `engine/engine.bundle.js` → `scripts/bootstrap.js` → `scripts/pause-overlay.js` → `games/minesweeper/scenes/menu.js` → `games/minesweeper/scenes/match.js`. Bootstrap upgraded from the old manual inline IIFE to `bootstrapGame(...)` per ADR-0017. `suppressContextMenu: true` preserved (right-click toggles flags). CI will regenerate `build/minesweeper.html` on the next main-branch push, and the rolling `latest-build` release will include `minesweeper.html` as a permanent download URL.
 
 **Session 2026-06-19 (GitHub Releases — rolling permanent download URLs):**
 
@@ -73,7 +77,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 ## Deferred housekeeping (tool-gated)
 
 - **Dead file deletion.** Blocked on `GitHub:delete_file` approval.
-- **Minesweeper build bundle drift.** Its inlined build is stale; deferred until the game is next rebuilt. Distinct from engine bundle regeneration, which is now automated (ADR-0021).
+- ~~**Minesweeper build bundle drift.**~~ Resolved: `build-manifest.json` added; CI will regenerate on next main-branch push.
 - **Project knowledge bundle mirror is stale.** The repo bundle is now ~70 KB and CI-regenerated; the Project knowledge copy is the older ~49 KB version (2026-05-20). Trevor should re-upload `engine/engine.bundle.js` to Project knowledge at convenience. Sessions can always fetch the current repo bundle, so this is an optimization, not a correctness issue.
 - **`docs/project-bootstrap.md` is out of date.** It still describes the manual bundle-regeneration process and the (now-outdated) claim that `raw.githubusercontent.com` is not reachable. Needs a refresh to point at the CI bundle workflow, then a manual re-upload to Project knowledge.
 
@@ -92,7 +96,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ## Notes for the next session
 
-- **Permanent game download URLs (ADR-0022).** Each merged push to main updates the rolling `latest-build` GitHub Release. Download URLs: `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<game>.html`. Three games currently in the release: `drift.html`, `survivors-balance.html`, `libromancer.html`. Adding a new game with a `build-manifest.json` automatically includes it in the next release.
+- **Permanent game download URLs (ADR-0022).** Each merged push to main updates the rolling `latest-build` GitHub Release. Download URLs: `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<game>.html`. Four games now in the pipeline: `drift.html`, `survivors-balance.html`, `libromancer.html`, `minesweeper.html`. Adding a new game with a `build-manifest.json` automatically includes it in the next release.
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
 - **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
