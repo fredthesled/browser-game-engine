@@ -114,3 +114,26 @@ jobs:
           file_pattern: build/*.html
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      # Publishes a rolling GitHub Release so every built game has a permanent
+      # public download URL. The tag "latest-build" is deleted and recreated on
+      # each push so it always points to the most recent CI run.
+      # Only runs on pushes to main (not workflow_dispatch) to keep the release
+      # stable; manual dispatches still upload artifacts above.
+      - name: Publish rolling latest-build release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Skip gracefully if no HTML files were produced
+          if ! ls build/*.html 1>/dev/null 2>&1; then
+            echo "No built game files; skipping release."
+            exit 0
+          fi
+          # Delete existing release + tag so the rolling tag always moves forward
+          gh release delete latest-build --yes --cleanup-tag 2>/dev/null || true
+          # Create a fresh release with every built game as a downloadable asset
+          gh release create latest-build build/*.html \
+            --title "Latest Build" \
+            --notes "Auto-published from CI on every push to main. Download any .html file and open it in a browser to play." \
+            --latest
