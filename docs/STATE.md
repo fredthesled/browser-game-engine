@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -9,6 +9,12 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-20 (ParallaxBackground script):**
+
+1. **`scripts/parallax-background.js` added.** Plain utility class `ParallaxBackground` (same pattern as `PauseOverlay`) for multi-layer scrolling backgrounds. Constructor takes `(game, layers)` where `layers` is the array from a `parallax.anim.json` sidecar. Images load from ASSETS data URIs with a module-level cache (falls back to raw URL if ASSETS is unavailable). Two draw modes: `repeat: true` tiles horizontally with `speedX` scroll and optional `tileW` tile-width override; `repeat: false` stretches the image to fill the canvas with optional `speedY` vertical pan. No engine dependencies; no JS module imports. Registry entry added to `scripts/_registry.md`.
+
+---
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,7 +37,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. `ParallaxBackground` is implemented; no game uses it yet (blocked on a game needing scrolling backgrounds and an asset PNG being uploaded).
 
 ## Next up
 
@@ -50,7 +56,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### ParallaxBackground script
 
-`docs/ANIM_CONFIG.md` defines the `parallax.anim.json` sidecar schema, but the `ParallaxBackground` script does not yet exist. Build it when the first game needs scrolling backgrounds. Natural candidate: Clown Brawler (belt-plane side-scroller) or a future driving/runner game. Takes a `layers` config array in its constructor; the sidecar is the communication format Trevor uses to specify it.
+`scripts/parallax-background.js` is now implemented. Wire it into the first game that needs scrolling backgrounds: natural candidate is Clown Brawler (belt-plane side-scroller) or a future driving/runner game. To use: add background PNGs to `games/<name>/assets/`, add a `parallax.anim.json` sidecar specifying the layers, and instantiate `new ParallaxBackground(game, layers)` in the scene. See `scripts/_registry.md` for the full API and `docs/ANIM_CONFIG.md` for the sidecar schema.
 
 ### Pipeline improvements
 
@@ -103,7 +109,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
 - **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
-- **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
+- **ParallaxBackground script is built** (`scripts/parallax-background.js`). Wire it into the first game that needs scrolling backgrounds. Upload PNGs to `games/<name>/assets/`, commit a `parallax.anim.json` sidecar, instantiate `new ParallaxBackground(game, layers)` in the scene, call `bg.update(dt)` in update, `bg.draw(ctx)` before `super.draw(ctx)` in draw.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
 - **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
 - **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.
