@@ -63,6 +63,38 @@ const Balance = {
     if (rate === 1) return Math.floor(currency / base);
     const n = Math.log((currency * (rate - 1)) / (base * Math.pow(rate, owned)) + 1) / Math.log(rate);
     return Math.max(0, Math.floor(n));
+  },
+
+  // --- XP curves ------------------------------------------------------------
+  // xp(level, opts): XP required to advance FROM level `level` to level+1.
+  // level is 1-indexed (level 1 is the first playable level).
+  // opts.type: 'cubic' (default, Pokemon medium-fast), 'quadratic', 'exponential'
+  // opts.base: base XP amount (default 100)
+  // opts.rate: per-level growth factor for exponential (default 1.1, ~RuneScape)
+  // All types clamp level to a minimum of 1 to avoid zero or negative results.
+  xp(level, opts = {}) {
+    const base = opts.base ?? 100;
+    const lvl = Math.max(1, level);
+    switch (opts.type || 'cubic') {
+      case 'cubic':       return base * lvl * lvl * lvl;
+      case 'quadratic':   return base * lvl * lvl;
+      case 'exponential': return base * Math.pow(opts.rate ?? 1.1, lvl - 1);
+      default:
+        throw new Error(`Engine.Balance.xp: unknown curve type '${opts.type}'`);
+    }
+  },
+
+  // --- Prestige / reset reward ----------------------------------------------
+  // prestige(lifetime, opts): prestige points earned from `lifetime` total
+  // earnings (coins, score, etc.). Uses floor((lifetime/scale)^(1/expo)).
+  // opts.scale: normalises lifetime into natural units (default 1; caller
+  //   picks scale matching their economy, e.g. 1e6 for million-coin games).
+  // opts.expo: root exponent - 3 (default, cube-root, Cookie Clicker) gives
+  //   slower repeat prestige; 2 (sqrt) gives gentler, faster cycling.
+  prestige(lifetime, opts = {}) {
+    const scale = opts.scale ?? 1;
+    const expo = opts.expo ?? 3;
+    return Math.floor(Math.pow(Math.max(0, lifetime) / scale, 1 / expo));
   }
 };
 

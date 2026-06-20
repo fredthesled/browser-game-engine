@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -8,7 +8,23 @@ Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typi
 
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
+**Note: 10 open draft PRs** target the same main baseline (2026-06-03). None are merged. When merging, resolve `docs/STATE.md` conflicts by keeping all session log entries. ADR numbers in open PRs (0022-0026) are provisional; renumber sequentially from ADR-0022 after each merge. Duplicate coverage noted: PRs #1 and #5 both add rolling GitHub releases; PRs #6 and #10 both add `ParallaxBackground`. Consolidate before merging these pairs.
+
 ## What was done in the most recent session
+
+**Session 2026-06-20 (XP curves + prestige balance primitives):**
+
+1. **`Engine.Balance.xp(level, opts)` added.** XP required to advance FROM level `level` to the next. Three curve types: `cubic` (default, `base * level^3`, Pokemon medium-fast), `quadratic` (`base * level^2`), `exponential` (`base * rate^(level-1)`, RuneScape-like ~10% per level). Levels below 1 clamp to 1. No new ADR - incremental addition to the existing balance module (same pattern as PRs #8 and #4).
+
+2. **`Engine.Balance.prestige(lifetime, opts)` added.** Prestige points from lifetime earnings: `floor((lifetime / scale)^(1/expo))`. `expo: 3` (default, cube-root, Cookie Clicker) gives slow repeat prestige; `expo: 2` (sqrt) is gentler. `scale` defaults to 1; callers normalise to their economy.
+
+3. **`docs/resources/balance.md` updated.** XP and prestige promoted from deferred to implemented in the mechanic table. Full parameter docs added for each primitive. Pseudo-random distribution entry updated to note `Engine.PRNG` (PR #9) as a prerequisite.
+
+4. **`docs/STATE.md` updated** (this entry) with note about the 10 open PRs and ADR consolidation needed on merge.
+
+CI will regenerate `engine/engine.bundle.js` on merge via `.github/workflows/bundle.yml` (ADR-0021).
+
+## Previously done
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -16,13 +32,13 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 2. **`docs/resources/balance.md` added.** Concise formula reference: the mechanic-to-formula table, the implemented primitives with formulas and default constants, the deferred-primitive roadmap (diminishing returns, multiplicative damage, pseudo-random distribution and pity timers, XP curves, prestige curves, a DDA controller) with formulas recorded, key constants, and caveats. Indexed in `docs/resources/INDEX.md`. This is the reference the new balance-check rule points at.
 
-3. **Balance-check authoring step added to CLAUDE.md §8.** Any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression now names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding. Direct countermeasure to the difficulty-overcorrection pattern.
+3. **Balance-check authoring step added to CLAUDE.md section 8.** Any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression now names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding. Direct countermeasure to the difficulty-overcorrection pattern.
 
-4. **Engine bundle regeneration moved to CI (ADR-0021).** Added `engine/bundle-manifest.json` (ordered source list), `scripts/build-bundle.sh` (concatenates the manifest sources behind banners under an auto-generated header with per-source git blob SHAs), and `.github/workflows/bundle.yml` (regenerates on any bundled-source change, runs `node --check`, commits the bundle back as `github-actions[bot]`). The bundle is no longer hand-built. CLAUDE.md §8 changed from "regenerate in the same commit" to "edit sources only; CI regenerates; never hand-build the bundle." Supersedes the manual-regeneration portion of ADR-0016.
+4. **Engine bundle regeneration moved to CI (ADR-0021).** Added `engine/bundle-manifest.json` (ordered source list), `scripts/build-bundle.sh` (concatenates the manifest sources behind banners under an auto-generated header with per-source git blob SHAs), and `.github/workflows/bundle.yml` (regenerates on any bundled-source change, runs `node --check`, commits the bundle back as `github-actions[bot]`). The bundle is no longer hand-built. CLAUDE.md section 8 changed from "regenerate in the same commit" to "edit sources only; CI regenerates; never hand-build the bundle." Supersedes the manual-regeneration portion of ADR-0016.
 
 5. **Bundle drift incident, resolved.** The balance module's first commit omitted the regenerated bundle, then a manual fix attempt (emitting the full ~49 KB bundle in one call) timed out. This motivated item 4. The CI workflow's first run regenerated the bundle correctly; it now includes `Engine.Balance`. Captured as retro 9b in CLAUDE.md. Note the regenerated bundle is ~70 KB (up from ~49 KB) because the runner concatenates the full vendored `sfxr.js` / `riffwave.js` sources, whereas the previous hand-built bundle had condensed comments. Runtime is identical; permitted by ADR-0016.
 
-6. **Docs updated.** `docs/DECISIONS.md` (ADR-0020, ADR-0021, and supersession notes on ADR-0016), `docs/ARCHITECTURE.md` (balance module in the table, file layout, concat order, and a Balance class contract; CI bundle rule), `CLAUDE.md` (§8 rules above plus retro 9b and a §4 note that emitting large files in one call is a known-weak operation).
+6. **Docs updated.** `docs/DECISIONS.md` (ADR-0020, ADR-0021, and supersession notes on ADR-0016), `docs/ARCHITECTURE.md` (balance module in the table, file layout, concat order, and a Balance class contract; CI bundle rule), `CLAUDE.md` (section 8 rules above plus retro 9b and a section 4 note that emitting large files in one call is a known-weak operation).
 
 ## Previously done
 
@@ -46,7 +62,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Balance primitive expansion
 
-`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
+`Engine.Balance` (ADR-0020) covers: difficulty curves, cost scaling (`cost`/`bulkCost`/`maxAffordable`), XP curves (`xp`), and prestige (`prestige`). In-flight via open PRs: `diminish` (softcap, PR #4), `damage` (multiplicative, PR #8). Still deferred: pseudo-random distribution + pity timers (needs `Engine.PRNG` from PR #9 to merge first), and DDA controller (EWMA + proportional + dead-zone). Add each when a game needs it.
 
 ### ParallaxBackground script
 

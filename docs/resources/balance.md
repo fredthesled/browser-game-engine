@@ -15,9 +15,9 @@ than what is distilled here.
 | Armor, damage reduction, softcap | `reduce(x, k) = x/(x+k)` | deferred |
 | Base attack vs defense | multiplicative `atk * k/(k+def)` | deferred |
 | Proc / crit / drop with anti-streak | pseudo-random distribution plus pity timer | deferred |
-| XP to next level | cubic, exponential (RuneScape form), or quadratic | deferred |
+| XP to next level | `xp(level, opts)` - cubic, quadratic, exponential | implemented |
 | Auto difficulty from player performance | DDA controller (EWMA + proportional + dead-zone) | deferred |
-| Prestige / reset reward | cube-root (or sqrt) of lifetime earnings | deferred |
+| Prestige / reset reward | `prestige(lifetime, opts)` - cube-root or sqrt | implemented |
 
 ## Implemented primitives (`engine/balance.js`)
 
@@ -58,6 +58,34 @@ Closed-form inverse of `bulkCost`: how many units `currency` buys starting from
 All functions use nullish-coalescing defaults, so an explicit `0` (for example
 `d0: 0`) is respected rather than overridden by the default.
 
+### `xp(level, opts)`
+
+XP required to advance FROM level `level` to `level+1` (1-indexed; level 1 is
+the first playable level). Levels below 1 are clamped to 1.
+
+- `cubic` (default): `base * level^3`. XP cost grows cubically - level 1 costs
+  `base`, level 10 costs `100 * base`. Matches Pokemon's medium-fast curve.
+- `quadratic`: `base * level^2`. Gentler; level 10 costs `10 * base`.
+- `exponential`: `base * rate^(level-1)` (`rate` default 1.1). Each level costs
+  ~10% more than the previous; matches the RuneScape growth shape for early
+  levels. The same `rate` band as `cost()` (1.07-1.15) applies here.
+
+Typical usage: compare `player.xp >= Engine.Balance.xp(player.level)` each
+frame and level-up when the threshold is crossed.
+
+### `prestige(lifetime, opts)`
+
+Prestige points earned from `lifetime` total earnings. Formula:
+`floor((lifetime / scale) ^ (1 / expo))`.
+
+- `expo: 3` (default): cube-root. Prestige 1 at `scale`, 2 at `8*scale`,
+  3 at `27*scale`. The cost of the x-th prestige point grows as x^3, matching
+  Cookie Clicker's curve.
+- `expo: 2`: square-root. Prestige 1 at `scale`, 2 at `4*scale`. Gentler,
+  faster repeat prestige.
+- `scale` defaults to `1`; set it to match your economy (e.g. `1e6` if the
+  player accrues millions of coins before their first reset).
+
 ## Deferred primitives (roadmap)
 
 Future increments extend `Engine.Balance`. Formulas are recorded here so the
@@ -75,13 +103,7 @@ next session does not re-derive them. Each is its own ADR and commit.
   the last success, `P(N) = C * N`, rising to 1; choose `C` so the long-run
   rate equals the nominal probability `p`. Reduces streakiness while preserving
   the mean. A pity timer is the limiting case (guaranteed after a maximum
-  number of failures).
-- **XP curves**: cubic `level^3` (Pokemon medium-fast), exponential (RuneScape,
-  roughly +10% per level), or quadratic. Guard polynomial curves against
-  negative values at low levels.
-- **Prestige / reset reward**: `floor((lifetime / scale)^(1/3))` (cube root,
-  Cookie Clicker; the cost of the x-th prestige point grows as x^3). A
-  square-root variant gives gentler, faster repeat prestige.
+  number of failures). Prerequisite: `Engine.PRNG` (in flight, PR #9).
 - **Dynamic difficulty adjustment (DDA)**: smooth the performance signal with an
   EWMA `score = a*obs + (1-a)*score` (`a` ~ 0.1); correct proportionally
   `difficulty += K * (target - score)` (`target` ~ 0.5, `K` ~ 0.1 of the
