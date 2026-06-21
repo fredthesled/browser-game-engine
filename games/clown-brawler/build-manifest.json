@@ -1,15 +1,15 @@
 {
-  "game":   "clown-brawler",
-  "title":  "Clown Brawler",
-  "output": "build/clown-brawler-v2.html",
+  "game": "clown-brawler",
+  "title": "Clown Brawler",
+  "output": "build/clown-brawler.html",
   "concat": [
     "engine/engine.bundle.js",
     "scripts/bootstrap.js",
     "scripts/pause-overlay.js",
-    "scripts/tween.js",
+    "scripts/shape-sprite.js",
+    "games/clown-brawler/scripts/clown-player.js",
     "games/clown-brawler/scripts/gorilla-enemy.js",
     "games/clown-brawler/scripts/floating-balloon.js",
-    "games/clown-brawler/scripts/clown-player.js",
     "games/clown-brawler/scenes/clown-menu.js",
     "games/clown-brawler/scenes/clown-match.js"
   ],

@@ -12,51 +12,17 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## What was done in the most recent session
 
-**Session 2026-06-20 (Clown Brawler Tween integration + build manifest):**
+**Session 2026-06-20 (build manifests for all remaining games):**
 
-Note: PRs #2-#5 are open (registry validation, scaffolding script, balance-diminish, GitHub releases). All four "Next up" pipeline items have been drafted in parallel sessions and are awaiting review.
+Added `build-manifest.json` files for the six games that had none: pong, survivors, clown-brawler, minesweeper, party-house, and horses-teach-typing. All manifests were locally built and verified against `scripts/build-game.sh` before commit. CI will now regenerate these games on every push to main alongside drift, libromancer, and survivors-balance.
 
-1. **`gorilla-enemy.js` refactored: `ShapeSprite.onDone` replaces `_deathTimer`.** The `dying` -> `dead` transition previously used a manual `_deathTimer` counter that reached 0.7s (matching the animation duration). Replaced with `this._sprite.play('dying').onDone(() => { ...emit signals... })`. The dying animation's own 0.7s duration is now the single source of truth. Removed `_deathTimer` field entirely. The `'dying'` case in `update()` is now a bare `break;`.
-
-2. **`floating-balloon.js` refactored: `Tween` replaces manual alpha tracking.** The previous code used `_alpha -= _fadeRate * dt` (rate 0.42/s = 2.38s to zero) checked each frame. Replaced with `new Tween(this._sprite, { alpha: 0 }, 2.38, Tween.linear).onComplete(() => { brawler_remove })`. Removed `_alpha` and `_fadeRate` fields. The `update()` method now calls `this._tween.update(dt)` instead of manually decrementing alpha.
-
-3. **`games/clown-brawler/build-manifest.json` added.** Puts Clown Brawler on the CI pipeline (previously manually assembled). Concat order: engine bundle -> bootstrap -> pause-overlay -> **tween.js** (new dependency from item 2) -> gorilla-enemy -> floating-balloon -> clown-player -> clown-menu -> clown-match. Output overwrites `build/clown-brawler-v2.html`. Bootstrap updated from old inline IIFE to `bootstrapGame()` per ADR-0017; preset `regular: { w: 800, h: 500 }` matches the hardcoded dimensions in the match scene. Build verified locally (`bash scripts/build-game.sh`).
-
-## Previously completed sessions
-Settled infrastructure: engine (13 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and `Engine.PRNG` seeded random number generator (ADR-0026).
-
-## What was done in the most recent session
-
-**Session 2026-06-20 (seeded PRNG module):**
-
-1. **`engine/prng.js` added (ADR-0026, pending renumber).** `Engine.PRNG`, a seeded pseudo-random number generator using the SFC32 algorithm (128-bit state, period ≥ 2^64). String seeds hashed to 128-bit state by cyrb128 (CC0). Integer seeds expanded via LCG. Both paths warm up with 15 discarded outputs. API: `float()` → [0,1); `int(min, max)` → inclusive integer; `pick(arr)` → random element; `shuffle(arr)` → Fisher-Yates in place. Enables reproducible procedural content (daily seeds, level gen, loot tables, replays) and multiple independent random streams per game. Implementation tested in Node.js before commit; verified determinism, distribution, and edge cases. Opt-in; engine core does not call it.
-
-2. **`engine/bundle-manifest.json` updated.** `engine/prng.js` added as the thirteenth bundled module. CI will regenerate `engine/engine.bundle.js` on merge; no manual bundle work.
-
-3. **`docs/DECISIONS.md` updated.** ADR-0026 added (note: numbered from main baseline; several open PRs claim ADR-0022–0025, to be renumbered sequentially after all PRs merge).
-
-4. **`docs/ARCHITECTURE.md` updated.** Module table updated (ten → eleven modules); PRNG row added; `Engine.PRNG` class contract section added; file layout and concat order updated (position 13); future-work note separated RNG shaping from Balance deferred list.
-
-5. **`docs/STATE.md` updated** (this entry).
-
-## Previously done
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), registry validation in CI (ADR-0023), and game scaffolding script (ADR-0024).
-
-## What was done in the most recent session
-
-**Session 2026-06-20 (game scaffolding script, ADR-0024):**
-
-1. **`scripts/scaffold-game.sh` added.** Takes `<name>` (game slug) and `<title>` (display name) as arguments. Validates that the slug is lowercase/URL-safe and that `games/<name>/` doesn't already exist. Creates `games/<name>/scenes/menu.js` (a working placeholder MenuScene) and `games/<name>/build-manifest.json` (wired to `bootstrapGame`, ready for the CI build pipeline). Validates the slug regex before touching the filesystem.
-
-2. **`.github/workflows/scaffold.yml` added (ADR-0024).** `workflow_dispatch` workflow with two inputs: `name` and `title`. Runs `scaffold-game.sh` and commits the two created files back to the repo via `stefanzweifel/git-auto-commit-action@v5`. Follows the same patterns as `build.yml` and `bundle.yml` (Node 24 opt-in, Read and write permissions required for the commit-back step).
-
-3. **ADR-0024 added to `docs/DECISIONS.md`.**
-
-## Previously done
-
-**Session 2026-06-20 (registry validation in CI, ADR-0023):** Registry validation step added to `validate` job in `build.yml`. Scans `scripts/` and `scenes/` at maxdepth 1; asserts each `.js` filename appears in its folder's `_registry.md`. All 9 current root files pass.
-
-**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
+Manifest specifics:
+- **pong** (800x600): engine.bundle + bootstrap + rect-renderer + collider + 3 scripts + 2 scenes. No PauseOverlay (retrofit is deferred per STATE).
+- **survivors** (800x600): engine.bundle + bootstrap + pause-overlay + rect-renderer + collider + 4 scripts + 3 scenes. Excludes survivors-levelup.js (not wired into the game flow in this version).
+- **clown-brawler** (800x500): engine.bundle + bootstrap + pause-overlay + shape-sprite + 3 scripts + 2 scenes. Uses `Engine.ShapeSprite` (from shape-sprite.js) for all visuals.
+- **minesweeper** (900x600): engine.bundle + bootstrap + pause-overlay + 2 scenes. `suppressContextMenu: true` because right-click flags mines.
+- **party-house** (960x540): engine.bundle + bootstrap + pause-overlay + 2 scenes. 960x540 matched the canvas dimensions in the old hand-built HTML.
+- **horses-teach-typing** (800x500): engine.bundle + bootstrap + pause-overlay + rhythm-letter.js script + 2 scenes. 800x500 matched the old hand-built canvas.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -79,7 +45,7 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.PRNG` is ready to use; no game consumes it yet. Natural first applications: a daily-challenge game (seed = date string), procedural level generation in Drift or a new game, or deterministic loot tables in Survivors. Several open PRs (see below) add pipeline improvements, balance primitives, and game content; they are all based on the same main-branch commit and will need STATE.md conflict resolution at merge time.
+Nothing blocked. All nine games (pong, survivors, clown-brawler, minesweeper, party-house, horses-teach-typing, drift, libromancer, survivors-balance) now have build manifests and are assembled by CI on every push to main.
 
 ## Next up
 
@@ -117,8 +83,8 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 5. **Drift v1 bug fixes.**
 6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
-7. ~~Apply Tween to Clown Brawler~~ — done (2026-06-20). FloatingBalloon alpha Tween + gorilla onDone.
-8. ~~Build manifest for Clown Brawler~~ — done (2026-06-20). Remaining: Pong, Survivors, HTT, Party House.
+7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
+8. ~~**Build manifests for existing games.**~~ Done (session 2026-06-20).
 
 ## Deferred to shipping mode
 
