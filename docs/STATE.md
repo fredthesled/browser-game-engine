@@ -10,7 +10,19 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## What was done in the most recent session
 
-**Session 2026-06-20 (GitHub Releases step — duplicate PR situation):**
+**Session 2026-06-20 (GitHub Releases rolling publish):**
+
+1. **Rolling `latest-build` GitHub Release added to `.github/workflows/build.yml`.** After each game build on main, the CI job deletes any existing `latest-build` release and recreates it with all `build/*.html` files as assets. Every game now has a permanent, shareable download URL — `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<name>.html` — with no server required. Uses `gh release create` (available on all GitHub-hosted runners). The release is marked `--prerelease` so it does not surface as the repository's "latest release". Pipeline improvement #1 from the roadmap, now done.
+
+## Previously done
+
+**Session 2026-06-03 (balance primitives + bundle CI):**
+
+1. **`engine/balance.js` added (ADR-0020).** `Engine.Balance`, a namespace of pure, stateless functions. First increment: `difficulty(t, opts)` (curve dispatcher over linear / exponential / logarithmic / logistic, default logistic) and `cost(n, opts)` (`base * rate^n`, default rate 1.10, band 1.07-1.15), plus closed-form `bulkCost(owned, count, opts)` and `maxAffordable(owned, currency, opts)`. Opt-in per game; the engine core does not call it. Verified locally against brute-force summation and the Clicker Heroes cost reference. It is the twelfth bundled module (concat step 12).
+
+2. **`docs/resources/balance.md` added.** Concise formula reference: the mechanic-to-formula table, the implemented primitives with formulas and default constants, the deferred-primitive roadmap (diminishing returns, multiplicative damage, pseudo-random distribution and pity timers, XP curves, prestige curves, a DDA controller) with formulas recorded, key constants, and caveats. Indexed in `docs/resources/INDEX.md`. This is the reference the new balance-check rule points at.
+
+3. **Balance-check authoring step added to CLAUDE.md §8.** Any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression now names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding. Direct countermeasure to the difficulty-overcorrection pattern.
 
 1. **Implemented rolling `latest-build` GitHub Release in build.yml.** Added two steps to the build job: delete existing `latest-build` tag/release, then create fresh release via `softprops/action-gh-release@v2` with all `build/*.html` as assets. Added `releases: write` permission. However, this session discovered that 14 draft PRs had already accumulated from other automated runs today (all on the same base commit), including three that implement the same releases step (#1, #5, #12). This session's work is a duplicate; the updated STATE.md with backlog table is the primary deliverable.
 
@@ -67,7 +79,10 @@ After all merges: one cleanup commit to fix ADR number collisions in DECISIONS.m
 
 ## Currently in progress
 
-PR backlog needs merging (see table above). Once merged, main will reflect: Engine.PRNG, Engine.Balance (diminish/damage/xp/prestige/DDA), ParallaxBackground script, build manifests for all 9 games, rolling GitHub Release, scaffolding workflow, and registry validation.
+1. ~~**GitHub Releases step.**~~ Done (2026-06-20). Rolling `latest-build` release publishes all `build/*.html` files as assets on every main push.
+2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
+3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
+4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
 
 ## Next up (after merge session)
 
@@ -103,10 +118,12 @@ PR backlog needs merging (see table above). Once merged, main will reflect: Engi
 
 ## Notes for the next session
 
-- **MERGE THE PR BACKLOG FIRST.** See the PR table above. Main is stale; every new automated run will redo work already done in open PRs.
-- **After merging**: `docs/DECISIONS.md` ADR numbers need cleanup (multiple PRs claimed sequential numbers from the same base). One cleanup commit.
-- **The engine bundle is CI-generated; never hand-build it (ADR-0021).**
-- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding.
-- **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit.
+- **Game builds have permanent download URLs.** `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<name>.html`. The rolling `latest-build` release is recreated on every main push by `.github/workflows/build.yml`. Marked `--prerelease` so it doesn't surface as "latest release".
+- **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
+- **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
+- **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
+- **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
+- **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
+- **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
 - **Dead files**: `grep -r DEAD-FILE` to enumerate.
