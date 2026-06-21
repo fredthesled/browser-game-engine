@@ -12,6 +12,7 @@
     "engine/storage.js",
     "engine/game.js",
     "engine/narrative.js",
-    "engine/balance.js"
+    "engine/balance.js",
+    "engine/prng.js"
   ]
 }
