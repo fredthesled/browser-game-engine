@@ -1,6 +1,6 @@
 # State
 
-Last updated: 2026-06-21
+Last updated: 2026-06-20
 
 ## Current status
 
@@ -10,47 +10,15 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## What was done in the most recent session
 
-**Session 2026-06-21 (marginalia combat scene):**
+**Session 2026-06-20 (marginalia combat scene):**
 
 1. **`games/marginalia/scenes/match.js` added.** `LibraryMatchScene` — the combat loop that was missing from the Marginalia scaffold. Implements the full state machine: `PLAYER_TURN → ANIMATING → resolveEnemy → PLAYER_TURN`, with `ENCOUNTER_WIN`, `VICTORY`, and `GAME_OVER` terminals. Spell casting applies the `effect(state)` contract from `spells.js` — including `applySpellEffect` for the `citation` spell's repeat mechanic, `chainBonus` accumulation, `extraCastThisTurn` multi-cast, and encounter `armor` absorption. Enemy turns handle heal intervals (`healEvery`/`healAmount`), alt-attacks that bypass defense (`altAttackEvery`/`altAttackDmg`), stun from `ex_libris`, and `redaction`'s attack modifier. Victory/game-over auto-transitions (0.65s) to `LibraryGameOverScene` with outcome data. Player starts at 24 HP; heals 4 HP between encounters (capped at 24). Unlocks one of the six `UNLOCK_SPELL_IDS` per encounter cleared (in order), persisted via `Engine.storage`.
 
 2. **`games/marginalia/build-manifest.json` added.** Puts Marginalia on the CI build pipeline (`.github/workflows/build.yml`). Canvas preset: regular 900×620, compact 600×820. Concat order: engine bundle → bootstrap → spells → encounters → menu → deck-select → game-over → match.
+** Posted a comment on PR #14 with a suggested merge order. Created a Gmail draft to trevordoner@gmail.com with the full backlog analysis.
 
-**Session 2026-06-03 (balance primitives + bundle CI):**
 
-1. **`engine/balance.js` added (ADR-0020).** `Engine.Balance`, a namespace of pure, stateless functions. First increment: `difficulty(t, opts)` (curve dispatcher over linear / exponential / logarithmic / logistic, default logistic) and `cost(n, opts)` (`base * rate^n`, default rate 1.10, band 1.07-1.15), plus closed-form `bulkCost(owned, count, opts)` and `maxAffordable(owned, currency, opts)`. Opt-in per game; the engine core does not call it. Verified locally against brute-force summation and the Clicker Heroes cost reference. It is the twelfth bundled module (concat step 12).
-
-2. **`docs/resources/balance.md` added.** Concise formula reference: the mechanic-to-formula table, the implemented primitives with formulas and default constants, the deferred-primitive roadmap (diminishing returns, multiplicative damage, pseudo-random distribution and pity timers, XP curves, prestige curves, a DDA controller) with formulas recorded, key constants, and caveats. Indexed in `docs/resources/INDEX.md`. This is the reference the new balance-check rule points at.
-
-3. **Balance-check authoring step added to CLAUDE.md §8.** Any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression now names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding. Direct countermeasure to the difficulty-overcorrection pattern.
-
-1. **Implemented rolling `latest-build` GitHub Release in build.yml.** Added two steps to the build job: delete existing `latest-build` tag/release, then create fresh release via `softprops/action-gh-release@v2` with all `build/*.html` as assets. Added `releases: write` permission. However, this session discovered that 14 draft PRs had already accumulated from other automated runs today (all on the same base commit), including three that implement the same releases step (#1, #5, #12). This session's work is a duplicate; the updated STATE.md with backlog table is the primary deliverable.
-
-2. **Identified PR backlog and sent merge guide.** Posted a comment on PR #14 with a suggested merge order. Created a Gmail draft to trevordoner@gmail.com with the full backlog analysis.
-
-## PR BACKLOG — ACTION NEEDED
-
-14 draft PRs open as of 2026-06-20, all from today, all on base `9dbb232`. Main has not advanced since 2026-06-03. **Trevor needs to do a merge session.**
-
-| PR | Branch | What it adds | Keep? |
-|----|--------|-------------|-------|
-| #1 | claude/github-releases | Rolling release + Minesweeper manifest | **KEEP** |
-| #2 | claude/registry-validation | Registry validation in CI validate job | Keep |
-| #3 | claude/scaffolding-script | scaffold-game.sh + workflow | Keep |
-| #4 | claude/balance-diminish | Engine.Balance.diminish | Keep |
-| #5 | claude/youthful-maxwell-htyyao | Rolling release (simpler) | Close (dup of #1) |
-| #6 | claude/youthful-maxwell-j3hn33 | ParallaxBackground + Clown Brawler Tween | **KEEP** |
-| #7 | claude/youthful-maxwell-8a9yhz | Build manifests: Pong/Survivors/HTT/Party House | Close (dup of #13) |
-| #8 | claude/youthful-maxwell-x3bqxe | Drift crew AI + Engine.Balance.damage | Keep |
-| #9 | claude/youthful-maxwell-44qml1 | Engine.PRNG seeded RNG | Keep |
-| #10 | claude/youthful-maxwell-svehku | ParallaxBackground (less complete) | Close (dup of #6) |
-| #11 | claude/youthful-maxwell-euq85u | Engine.Balance.xp + prestige | Keep |
-| #12 | claude/youthful-maxwell-mgpm11 | Rolling release (gh CLI, push-only) | Close (dup of #1) |
-| #13 | claude/youthful-maxwell-1ehw8v | Build manifests for all 6 remaining games | **KEEP** |
-| #14 | claude/youthful-maxwell-2nmh37 | Engine.Balance.DDA controller | Keep |
-
-Nothing blocked. Marginalia is now fully playable (combat scene added this session). Libromancer was already complete. `Engine.Balance` is still unused by any game; natural candidates are Survivors wave scaling or a future incremental.
-
+Merges complete as of 2026-06-20.
 After all merges: one cleanup commit to fix ADR number collisions in DECISIONS.md.
 
 ### Marginalia balance tuning
