@@ -6,15 +6,19 @@ Last updated: 2026-06-21
 
 Nine games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, Drift v1, Libromancer, and Marginalia. Plus `poc-square` as an engine smoke test.
 
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and rolling GitHub Releases with permanent public download URLs (ADR-0022).
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
 
-**Session 2026-06-21 (marginalia combat scene):**
+**Session 2026-06-21 (Marginalia LibraryMatchScene + build manifest):**
 
-1. **`games/marginalia/scenes/match.js` added.** `LibraryMatchScene` — the combat loop that was missing from the Marginalia scaffold. Implements the full state machine: `PLAYER_TURN → ANIMATING → resolveEnemy → PLAYER_TURN`, with `ENCOUNTER_WIN`, `VICTORY`, and `GAME_OVER` terminals. Spell casting applies the `effect(state)` contract from `spells.js` — including `applySpellEffect` for the `citation` spell's repeat mechanic, `chainBonus` accumulation, `extraCastThisTurn` multi-cast, and encounter `armor` absorption. Enemy turns handle heal intervals (`healEvery`/`healAmount`), alt-attacks that bypass defense (`altAttackEvery`/`altAttackDmg`), stun from `ex_libris`, and `redaction`'s attack modifier. Victory/game-over auto-transitions (0.65s) to `LibraryGameOverScene` with outcome data. Player starts at 24 HP; heals 4 HP between encounters (capped at 24). Unlocks one of the six `UNLOCK_SPELL_IDS` per encounter cleared (in order), persisted via `Engine.storage`.
+1. **`games/marginalia/scenes/match.js` added.** `LibraryMatchScene` implements all combat for Marginalia — the missing piece that was blocking the game from running. 6 sequential encounters; player HP carries across. Turn-based: cast 1 spell per turn (Codex grants +1 cast). Cooldown tracking per spell (spell.cooldown + 1 turn, decrements at end of turn). Status effects: `encMarked` (dog_ear — +2 dmg to all attacks, persists the encounter), `encStunned` (ex_libris — enemy skips next attack, one turn), `encAttMod` (redaction — reduces enemy attack this turn), `chainBonus` (marginalia_chain — +1 dmg to subsequent spells this turn). Enemy armor reduces total player damage per turn (errata strips armor permanently). Alt attacks (Grand Index every 3 turns, pierces defense). Periodic enemy healing (Borrower heals 4 HP every 2 turns). Each encounter victory unlocks one spell from UNLOCK_SPELL_IDS in order and saves it to storage. Player heals 3 HP between encounters. State machine: PLAYER_TURN → RESOLVING → PLAYER_TURN (or ENCOUNTER_WIN → next encounter / VICTORY). Player death transitions to GAME_OVER via LibraryGameOverScene. Citation spell (repeats last cast) and all other complex spell effects wire correctly via a mutable per-cast state object synced back to scene properties.
 
-2. **`games/marginalia/build-manifest.json` added.** Puts Marginalia on the CI build pipeline (`.github/workflows/build.yml`). Canvas preset: regular 900×620, compact 600×820. Concat order: engine bundle → bootstrap → spells → encounters → menu → deck-select → game-over → match.
+2. **`games/marginalia/build-manifest.json` added.** Game is now on CI: spells.js → encounters.js → menu.js → deck-select.js → match.js → game-over.js, bootstrapped as `LibraryMenuScene`. Regular preset 900×600, compact 600×800.
+
+3. **`scenes/_registry.md` updated.** Added entries for LibraryMenuScene, LibraryDeckSelectScene, LibraryMatchScene, LibraryGameOverScene.
+
+## Previously done
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -24,77 +28,55 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 3. **Balance-check authoring step added to CLAUDE.md §8.** Any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression now names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding. Direct countermeasure to the difficulty-overcorrection pattern.
 
-1. **Implemented rolling `latest-build` GitHub Release in build.yml.** Added two steps to the build job: delete existing `latest-build` tag/release, then create fresh release via `softprops/action-gh-release@v2` with all `build/*.html` as assets. Added `releases: write` permission. However, this session discovered that 14 draft PRs had already accumulated from other automated runs today (all on the same base commit), including three that implement the same releases step (#1, #5, #12). This session's work is a duplicate; the updated STATE.md with backlog table is the primary deliverable.
+4. **Engine bundle regeneration moved to CI (ADR-0021).** Added `engine/bundle-manifest.json` (ordered source list), `scripts/build-bundle.sh` (concatenates the manifest sources behind banners under an auto-generated header with per-source git blob SHAs), and `.github/workflows/bundle.yml` (regenerates on any bundled-source change, runs `node --check`, commits the bundle back as `github-actions[bot]`). The bundle is no longer hand-built. CLAUDE.md §8 changed from "regenerate in the same commit" to "edit sources only; CI regenerates; never hand-build the bundle." Supersedes the manual-regeneration portion of ADR-0016.
 
-2. **Identified PR backlog and sent merge guide.** Posted a comment on PR #14 with a suggested merge order. Created a Gmail draft to trevordoner@gmail.com with the full backlog analysis.
+5. **Bundle drift incident, resolved.** The balance module's first commit omitted the regenerated bundle, then a manual fix attempt (emitting the full ~49 KB bundle in one call) timed out. This motivated item 4. The CI workflow's first run regenerated the bundle correctly; it now includes `Engine.Balance`. Captured as retro 9b in CLAUDE.md. Note the regenerated bundle is ~70 KB (up from ~49 KB) because the runner concatenates the full vendored `sfxr.js` / `riffwave.js` sources, whereas the previous hand-built bundle had condensed comments. Runtime is identical; permitted by ADR-0016.
 
-## PR BACKLOG — ACTION NEEDED
-
-14 draft PRs open as of 2026-06-20, all from today, all on base `9dbb232`. Main has not advanced since 2026-06-03. **Trevor needs to do a merge session.**
-
-| PR | Branch | What it adds | Keep? |
-|----|--------|-------------|-------|
-| #1 | claude/github-releases | Rolling release + Minesweeper manifest | **KEEP** |
-| #2 | claude/registry-validation | Registry validation in CI validate job | Keep |
-| #3 | claude/scaffolding-script | scaffold-game.sh + workflow | Keep |
-| #4 | claude/balance-diminish | Engine.Balance.diminish | Keep |
-| #5 | claude/youthful-maxwell-htyyao | Rolling release (simpler) | Close (dup of #1) |
-| #6 | claude/youthful-maxwell-j3hn33 | ParallaxBackground + Clown Brawler Tween | **KEEP** |
-| #7 | claude/youthful-maxwell-8a9yhz | Build manifests: Pong/Survivors/HTT/Party House | Close (dup of #13) |
-| #8 | claude/youthful-maxwell-x3bqxe | Drift crew AI + Engine.Balance.damage | Keep |
-| #9 | claude/youthful-maxwell-44qml1 | Engine.PRNG seeded RNG | Keep |
-| #10 | claude/youthful-maxwell-svehku | ParallaxBackground (less complete) | Close (dup of #6) |
-| #11 | claude/youthful-maxwell-euq85u | Engine.Balance.xp + prestige | Keep |
-| #12 | claude/youthful-maxwell-mgpm11 | Rolling release (gh CLI, push-only) | Close (dup of #1) |
-| #13 | claude/youthful-maxwell-1ehw8v | Build manifests for all 6 remaining games | **KEEP** |
-| #14 | claude/youthful-maxwell-2nmh37 | Engine.Balance.DDA controller | Keep |
-
-Nothing blocked. Marginalia is now fully playable (combat scene added this session). Libromancer was already complete. `Engine.Balance` is still unused by any game; natural candidates are Survivors wave scaling or a future incremental.
-
-After all merges: one cleanup commit to fix ADR number collisions in DECISIONS.md.
-
-### Marginalia balance tuning
-
-Playable but untuned. After a test run, adjust:
-- Starting HP (currently 24; grand_index does 6+8-pierce per cycle — may be too punishing)
-- Inter-encounter heal (currently 4 HP)
-- Whether stun should prevent alt-attacks (currently it does not)
-
-No code changes needed until someone has played it.
-
-### Immediate: first real raster asset
-
-**Session 2026-06-03 (balance primitives + bundle CI):**
-
-1. **Minesweeper build manifest added (`games/minesweeper/build-manifest.json`).** Puts Minesweeper on the CI build pipeline, fixing the "Minesweeper build bundle drift" deferred item. Concat order: `engine/engine.bundle.js` → `scripts/bootstrap.js` → `scripts/pause-overlay.js` → `games/minesweeper/scenes/menu.js` → `games/minesweeper/scenes/match.js`. Bootstrap upgraded from the old manual inline IIFE to `bootstrapGame(...)` per ADR-0017. `suppressContextMenu: true` preserved (right-click toggles flags). CI will regenerate `build/minesweeper.html` on the next main-branch push, and the rolling `latest-build` release will include `minesweeper.html` as a permanent download URL.
-
-**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs):**
-
-1. **ADR-0022: rolling `latest-build` GitHub Release.** Added a "Publish rolling `latest-build` GitHub Release" step to the `build` job in `.github/workflows/build.yml`. After every successful build the step creates or upserts a release tagged `latest-build`, attaches all `build/*.html` files as assets (replacing any same-named asset from the prior run), and marks the release as the repo's latest. Produces stable public download URLs of the form `releases/download/latest-build/<game>.html`. `fail_on_unmatched_files: false` keeps docs-only pushes non-fatal. No new permissions needed; `contents: write` already covers release creation.
-
-2. **ADR-0022 added to `docs/DECISIONS.md`.** Records the decision, the two alternatives considered (per-build tags and GitHub Pages), and the consequences.
+6. **Docs updated.** `docs/DECISIONS.md` (ADR-0020, ADR-0021, and supersession notes on ADR-0016), `docs/ARCHITECTURE.md` (balance module in the table, file layout, concat order, and a Balance class contract; CI bundle rule), `CLAUDE.md` (§8 rules above plus retro 9b and a §4 note that emitting large files in one call is a known-weak operation).
 
 ## Previously done
 
-- **Session 2026-06-03 (balance primitives + bundle CI):** `engine/balance.js` added (ADR-0020, `Engine.Balance` with difficulty curves and cost scaling); bundle regeneration moved to CI (ADR-0021, `scripts/build-bundle.sh` + `.github/workflows/bundle.yml`); `docs/resources/balance.md` added; CLAUDE.md §8 updated with balance-check authoring step and bundle CI rules.
 - **Session 2026-05-26 (raster asset pipeline + animation communication format):** `scripts/build-game.sh` gained a functional `"assets"` array (base64-inlines PNG/JPG/WebP/GIF into an `ASSETS` global before sources); `docs/resources/assets.md` gained an asset-pipeline section and Piskel; `docs/ANIM_CONFIG.md` committed, defining the sprite-sheet sidecar (`<sheet>.anim.json`) and parallax sidecar (`parallax.anim.json`) formats.
 - See prior STATE entries: engine modules, Pong, Survivors v1-v3, Clown Brawler v1-v2, Party House, HTT, Minesweeper, Drift v1, SpriteSheet and ShapeSprite scripts, engine bundle convention, ADR-0017 visual language, ADR-0018 optional vendored library pattern, bootstrapGame, inkjs + Engine.Narrative, Tween utility, ShapeSprite.onDone and easing.
 
 ## Currently in progress
 
-1. ~~**GitHub Releases step.**~~ Done (2026-06-20). Rolling `latest-build` release publishes all `build/*.html` files as assets on every main push.
+Nothing blocked. Marginalia is now a complete, buildable game. Libromancer was already complete.
+
+## Next up
+
+### Immediate: first real raster asset
+
+The asset pipeline is in place but untested against a real image. The natural first exercise is Clown Brawler's gorilla or player sprite. Options, in order of effort:
+
+- **Option A (Kenney adapt):** Find the closest Kenney pack ("Toon Characters 1"), commit the sheet, write `gorilla-sheet.anim.json` describing the walk/attack/die frames, and let Claude rewrite `GorillaEnemy` to use `SpriteSheet` instead of inline canvas calls. Fast, but the aesthetic match to "Clown Brawler" is loose.
+- **Option B (Piskel custom):** Draw a 48x48 gorilla in Piskel (piskelapp.com, browser-based), export as PNG sprite sheet, commit, write the `.anim.json` sidecar. More work but full aesthetic control.
+
+Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles everything after that.
+
+### Balance primitive expansion
+
+`Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling. The deferred primitives, each its own ADR and commit, are recorded with formulas in `docs/resources/balance.md`: diminishing-returns reducer `x/(x+k)`, multiplicative damage `atk*k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a DDA controller (EWMA smoothing + proportional correction + dead-zone hysteresis). Add the next one when a game needs it rather than speculatively.
+
+### ParallaxBackground script
+
+`docs/ANIM_CONFIG.md` defines the `parallax.anim.json` sidecar schema, but the `ParallaxBackground` script does not yet exist. Build it when the first game needs scrolling backgrounds. Natural candidate: Clown Brawler (belt-plane side-scroller) or a future driving/runner game. Takes a `layers` config array in its constructor; the sidecar is the communication format Trevor uses to specify it.
+
+### Pipeline improvements
+
+1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
 3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
 4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
 
-## Next up (after merge session)
+### Other game work
 
-- **Pity timer / pseudo-random distribution primitive** — depends on Engine.PRNG (PR #9) being merged first. Formula in `docs/resources/balance.md`.
-- **Apply Engine.Balance.DDA to Survivors wave scaling** — first real game use of the DDA controller.
-- **Apply Engine.PRNG to Minesweeper / procedural games** — replace `Math.random()` for seeded/reproducible runs.
-- **First real raster asset** — still requires Trevor to upload a PNG. Options: Kenney adapt or Piskel custom for Clown Brawler gorilla.
-- **Ink pre-compilation** — `npx inkjs` at build time, ~100 KB saving for narrative games. Needs scoping.
-- **ADR number cleanup** — one commit after all PRs merge, renumber from ADR-0022 sequentially.
+5. **Drift v1 bug fixes.**
+6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
+7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
+8. **Build manifests for existing games.** Add when each game is next touched.
+9. **Marginalia balance pass.** The numbers are balanced on paper but not play-tested. First targets: Borrower heal interval (every 2 turns may be too frequent early), Grand Index alt-attack damage (8 piercing may be too punishing). Adjust after Trevor play-tests.
+10. **Marginalia deck-select bug.** The scene has two `enter()` definitions — the second (line 105) silently overwrites the first (line 26). The first enter() body (`this._t = 0; this._clicked = false;`) is already handled by the second enter() body. No functional impact, but worth cleaning up.
 
 ## Deferred to shipping mode
 
@@ -109,9 +91,9 @@ No code changes needed until someone has played it.
 ## Deferred housekeeping (tool-gated)
 
 - **Dead file deletion.** Blocked on `GitHub:delete_file` approval.
-- **Minesweeper build bundle drift.** Addressed by PR #1 (new manifest triggers fresh build).
-- **Project knowledge bundle mirror is stale.** Trevor should re-upload `engine/engine.bundle.js` to Project knowledge at convenience.
-- **`docs/project-bootstrap.md` is out of date.** Needs refresh after PRs merge.
+- **Minesweeper build bundle drift.** Its inlined build is stale; deferred until the game is next rebuilt. Distinct from engine bundle regeneration, which is now automated (ADR-0021).
+- **Project knowledge bundle mirror is stale.** The repo bundle is now ~70 KB and CI-regenerated; the Project knowledge copy is the older ~49 KB version (2026-05-20). Trevor should re-upload `engine/engine.bundle.js` to Project knowledge at convenience. Sessions can always fetch the current repo bundle, so this is an optimization, not a correctness issue.
+- **`docs/project-bootstrap.md` is out of date.** It still describes the manual bundle-regeneration process and the (now-outdated) claim that `raw.githubusercontent.com` is not reachable. Needs a refresh to point at the CI bundle workflow, then a manual re-upload to Project knowledge.
 
 ## Longer horizon
 
@@ -119,9 +101,15 @@ No code changes needed until someone has played it.
 - **Touch / pointer input**: deferred to a separate ADR.
 - **Public distribution**: GitHub Pages or Cloudflare Pages.
 
+## Open questions
+
+- **Clown Brawler sprite decision**: Kenney adapt vs. Piskel custom (see Next up).
+- **Drift v1 known issues**: scope TBD.
+- **Ink pre-compilation architecture**: see Next up item 2.
+- **Bundle comment trimming**: the CI bundle restores full vendored-lib comments (~70 KB). If session fetch cost becomes a concern, `build-bundle.sh` could strip comments from the vendored libraries. Not worth doing now.
+
 ## Notes for the next session
 
-- **Game builds have permanent download URLs.** `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<name>.html`. The rolling `latest-build` release is recreated on every main push by `.github/workflows/build.yml`. Marked `--prerelease` so it doesn't surface as "latest release".
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
 - **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
@@ -129,4 +117,10 @@ No code changes needed until someone has played it.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
 - **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
+- **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
+- **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.
+- **Tween build-order**: no dependencies; include before game scripts.
+- **`create_or_update_file` over `push_files` for large single files.** More reliable for files >20 KB. Large single-file pushes up to ~80 KB are reliable; beyond that, use the pipeline (this is exactly why the engine bundle moved to CI).
+- **Drift concat order**: `engine/lib/inkjs.js` -> `engine/engine.bundle.js` -> `scripts/bootstrap.js` -> `scripts/pause-overlay.js` -> `games/drift/encounters/sources.js` -> scenes -> `bootstrapGame({...})`.
+- **Node.js 24 opt-in** active via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` in both workflows. No-op after June 2, 2026.
 - **Dead files**: `grep -r DEAD-FILE` to enumerate.

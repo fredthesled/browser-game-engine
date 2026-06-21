@@ -5,12 +5,13 @@
   "concat": [
     "engine/engine.bundle.js",
     "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
     "games/marginalia/spells.js",
     "games/marginalia/encounters.js",
     "games/marginalia/scenes/menu.js",
     "games/marginalia/scenes/deck-select.js",
-    "games/marginalia/scenes/game-over.js",
-    "games/marginalia/scenes/match.js"
+    "games/marginalia/scenes/match.js",
+    "games/marginalia/scenes/game-over.js"
   ],
-  "bootstrap": "bootstrapGame({ canvasId: 'game', presets: { regular: { w: 900, h: 620 }, compact: { w: 600, h: 820 } }, gameName: 'marginalia', initialScene: function(game) { return new LibraryMenuScene(game); } });"
+  "bootstrap": "bootstrapGame({ canvasId: 'game', presets: { regular: { w: 900, h: 600 }, compact: { w: 600, h: 800 } }, gameName: 'marginalia', initialScene: function(game) { return new LibraryMenuScene(game); }, suppressContextMenu: true });"
 }
