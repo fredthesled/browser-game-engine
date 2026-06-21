@@ -23,6 +23,40 @@ Note: PRs #2-#5 are open (registry validation, scaffolding script, balance-dimin
 3. **`games/clown-brawler/build-manifest.json` added.** Puts Clown Brawler on the CI pipeline (previously manually assembled). Concat order: engine bundle -> bootstrap -> pause-overlay -> **tween.js** (new dependency from item 2) -> gorilla-enemy -> floating-balloon -> clown-player -> clown-menu -> clown-match. Output overwrites `build/clown-brawler-v2.html`. Bootstrap updated from old inline IIFE to `bootstrapGame()` per ADR-0017; preset `regular: { w: 800, h: 500 }` matches the hardcoded dimensions in the match scene. Build verified locally (`bash scripts/build-game.sh`).
 
 ## Previously completed sessions
+Settled infrastructure: engine (13 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and `Engine.PRNG` seeded random number generator (ADR-0026).
+
+## What was done in the most recent session
+
+**Session 2026-06-20 (seeded PRNG module):**
+
+1. **`engine/prng.js` added (ADR-0026, pending renumber).** `Engine.PRNG`, a seeded pseudo-random number generator using the SFC32 algorithm (128-bit state, period ≥ 2^64). String seeds hashed to 128-bit state by cyrb128 (CC0). Integer seeds expanded via LCG. Both paths warm up with 15 discarded outputs. API: `float()` → [0,1); `int(min, max)` → inclusive integer; `pick(arr)` → random element; `shuffle(arr)` → Fisher-Yates in place. Enables reproducible procedural content (daily seeds, level gen, loot tables, replays) and multiple independent random streams per game. Implementation tested in Node.js before commit; verified determinism, distribution, and edge cases. Opt-in; engine core does not call it.
+
+2. **`engine/bundle-manifest.json` updated.** `engine/prng.js` added as the thirteenth bundled module. CI will regenerate `engine/engine.bundle.js` on merge; no manual bundle work.
+
+3. **`docs/DECISIONS.md` updated.** ADR-0026 added (note: numbered from main baseline; several open PRs claim ADR-0022–0025, to be renumbered sequentially after all PRs merge).
+
+4. **`docs/ARCHITECTURE.md` updated.** Module table updated (ten → eleven modules); PRNG row added; `Engine.PRNG` class contract section added; file layout and concat order updated (position 13); future-work note separated RNG shaping from Balance deferred list.
+
+5. **`docs/STATE.md` updated** (this entry).
+
+## Previously done
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), registry validation in CI (ADR-0023), and game scaffolding script (ADR-0024).
+
+## What was done in the most recent session
+
+**Session 2026-06-20 (game scaffolding script, ADR-0024):**
+
+1. **`scripts/scaffold-game.sh` added.** Takes `<name>` (game slug) and `<title>` (display name) as arguments. Validates that the slug is lowercase/URL-safe and that `games/<name>/` doesn't already exist. Creates `games/<name>/scenes/menu.js` (a working placeholder MenuScene) and `games/<name>/build-manifest.json` (wired to `bootstrapGame`, ready for the CI build pipeline). Validates the slug regex before touching the filesystem.
+
+2. **`.github/workflows/scaffold.yml` added (ADR-0024).** `workflow_dispatch` workflow with two inputs: `name` and `title`. Runs `scaffold-game.sh` and commits the two created files back to the repo via `stefanzweifel/git-auto-commit-action@v5`. Follows the same patterns as `build.yml` and `bundle.yml` (Node 24 opt-in, Read and write permissions required for the commit-back step).
+
+3. **ADR-0024 added to `docs/DECISIONS.md`.**
+
+## Previously done
+
+**Session 2026-06-20 (registry validation in CI, ADR-0023):** Registry validation step added to `validate` job in `build.yml`. Scans `scripts/` and `scenes/` at maxdepth 1; asserts each `.js` filename appears in its folder's `_registry.md`. All 9 current root files pass.
+
+**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -45,9 +79,13 @@ Note: PRs #2-#5 are open (registry validation, scaffolding script, balance-dimin
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. `Engine.PRNG` is ready to use; no game consumes it yet. Natural first applications: a daily-challenge game (seed = date string), procedural level generation in Drift or a new game, or deterministic loot tables in Survivors. Several open PRs (see below) add pipeline improvements, balance primitives, and game content; they are all based on the same main-branch commit and will need STATE.md conflict resolution at merge time.
 
 ## Next up
+
+### Open PRs on the same base (review/merge backlog)
+
+Eight PRs are open, all based on the same main-branch commit (9dbb232). Expected ADR numbering conflicts (0022–0025 claimed by multiple PRs); resolve by renumbering sequentially after merging. STATE.md merge conflicts: keep all session log entries. PRs cover: GitHub Releases step (#1, #5 — two competing variants), registry validation (#2), game scaffolding (#3), Engine.Balance.diminish (#4), ParallaxBackground + Clown Brawler Tween (#6), build manifests for remaining games (#7), Drift crew AI + Engine.Balance.damage (#8).
 
 ### Immediate: first real raster asset
 
@@ -68,10 +106,12 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
 3. ~~Game scaffolding script~~ — done (2026-06-20).
 4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
+3. ~~**Game scaffolding script.**~~ Done (ADR-0024). `scripts/scaffold-game.sh` + `.github/workflows/scaffold.yml`. Dispatch with `name` + `title` to create a game skeleton.
+4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
 ### Other game work
 
@@ -113,12 +153,15 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 ## Notes for the next session
 
 - **4 draft PRs open** (#2 registry validation, #3 scaffolding, #4 balance-diminish, #5 GitHub releases). All target `main`; merge order is arbitrary. Expect STATE.md conflicts across them — resolve by keeping all session log entries.
+- **`Engine.PRNG` available.** `new Engine.PRNG(seed)` where seed is a string or integer. Returns an instance with `float()`, `int(min, max)`, `pick(arr)`, `shuffle(arr)`. String seeds (`'daily-2026-06-20'`) are reproducible; same string always produces the same sequence. Use one instance per independent random stream. The pseudo-random distribution (anti-streak proc) Balance primitive can now be built on top of it.
+
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
 - **Name the balance math (ADR-0020).** When building or changing a difficulty ramp, cost/upgrade curve, damage, drop rate, or progression, name the applicable `Engine.Balance` primitive or `docs/resources/balance.md` formula in the plan before coding. `balance.md` carries the formulas and the deferred roadmap.
 - **Asset pipeline ready.** Upload PNG to `games/<name>/assets/` via GitHub web UI, add path to manifest `"assets"` array, commit. ASSETS global is injected before source files in the build.
 - **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
 - **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
+- **Scaffold new games** via the Actions tab: `.github/workflows/scaffold.yml`, inputs `name` (slug) and `title`. Creates `games/<name>/build-manifest.json` and `games/<name>/scenes/menu.js` automatically.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
 - **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
 - **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.

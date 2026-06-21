@@ -4,7 +4,7 @@ This document describes the engine's design as of the most recent locked-in deci
 
 ## Overview
 
-The engine is composed of ten classes/modules, each in its own file under `engine/`:
+The engine is composed of eleven classes/modules, each in its own file under `engine/`:
 
 | File | Class/module | Role |
 |------|--------------|------|
@@ -18,8 +18,9 @@ The engine is composed of ten classes/modules, each in its own file under `engin
 | `engine/storage.js` | `Storage` (global instance) | Key/value persistence backed by localStorage, with optional per-game namespacing. |
 | `engine/narrative.js` | `Narrative` (per-encounter instance) | Thin wrapper around an inkjs Story for branching narrative content. Not a singleton; instantiated per encounter by game code. |
 | `engine/balance.js` | `Balance` (static namespace) | Tunable difficulty-curve and cost-scaling primitives. Pure, stateless functions; opt-in per game, not used by the engine core. |
+| `engine/prng.js` | `PRNG` (per-use instance) | Seeded pseudo-random number generator (SFC32 algorithm). Deterministic, reproducible sequences from a string or integer seed. Opt-in per game; `new Engine.PRNG(seed)`. |
 
-The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely. `Narrative` is also instantiated freely (typically once per encounter or dialogue surface) and is not held by the Game class. `Engine.Balance` is neither a singleton instance nor a class to instantiate; it is a namespace of pure functions (comparable to JavaScript's `Math`) that holds no state.
+The runtime expects a single Game instance, a single SignalBus instance, a single Input instance, a single Audio instance, and a single Storage instance. Scenes, GameObjects, and Scripts are instantiated freely. `Narrative` is also instantiated freely (typically once per encounter or dialogue surface) and is not held by the Game class. `Engine.Balance` is neither a singleton instance nor a class to instantiate; it is a namespace of pure functions (comparable to JavaScript's `Math`) that holds no state. `Engine.PRNG` is instantiated freely (one per independent random stream — level gen, loot, NPC behavior).
 
 Vendored third-party code lives under `engine/lib/`. The bundled libraries are `riffwave.js` and `sfxr.js` (jsfxr v1.4.0, public domain), used by `engine/audio.js`. Per ADR-0018, `engine/lib/` may also host **optional** vendored libraries that are explicitly excluded from the engine bundle; `inkjs.js` (inkjs 2.4.0, MIT, ~249 KB) is the first such library and is used by `engine/narrative.js`. Games using narrative include `engine/lib/inkjs.js` in their build before the engine bundle. See `engine/lib/README.md` for sources and update procedures.
 
@@ -206,6 +207,22 @@ Public API:
 
 Defaults use nullish-coalescing, so an explicit `0` (e.g. `d0: 0`) is honored rather than replaced. Future increments (diminishing returns, multiplicative damage, pseudo-random distribution and pity timers, XP curves, prestige curves, a dynamic-difficulty controller) extend this namespace per the roadmap in `docs/resources/balance.md`, each as its own ADR.
 
+### PRNG (per-use instance)
+
+Responsibilities: provide deterministic, reproducible random number sequences keyed to a seed, so games can produce the same procedural content (level layouts, enemy placement, loot rolls) for the same seed — enabling daily challenges, replays, and reproducible test cases. See ADR-0026.
+
+Algorithm: SFC32 (Small Fast Counting) by Chris Doty-Humphrey, 128-bit state, period ≥ 2^64. Passes PractRand at 32 TB. String seeds are expanded to 128-bit state via cyrb128 (bryc, CC0). Integer seeds are expanded via a three-step LCG. Both paths warm up the state with 15 discarded outputs to avoid low-entropy initial sequences.
+
+Public API:
+
+- `constructor(seed)` initializes the PRNG. `seed` may be a string (`'daily-2026-06-20'`) or an integer (`42`). Two instances constructed with the same seed produce identical sequences.
+- `float()` returns a value in [0, 1), equivalent to `Math.random()` but deterministic.
+- `int(min, max)` returns an integer in [min, max] inclusive.
+- `pick(arr)` returns a random element from a non-empty array. Throws on empty input.
+- `shuffle(arr)` performs a Fisher-Yates shuffle in place and returns the array.
+
+Use cases: one `Engine.PRNG` instance per independent random stream. For example, a level-gen PRNG seeded with the level number and a separate loot-roll PRNG seeded with the player's run seed can be advanced independently without cross-contaminating each other's sequences.
+
 ## Frame lifecycle
 
 For each animation frame the Game class executes, in order:
@@ -310,6 +327,7 @@ engine/
 ├── storage.js
 ├── narrative.js
 ├── balance.js
+├── prng.js
 └── lib/
     ├── README.md
     ├── UNLICENSE
@@ -334,9 +352,10 @@ The single-file HTML build (`build/<name>.html`) inlines source files in the fol
 10. `engine/game.js` (instantiates `Engine.Audio` and `Engine.Storage` in its constructor)
 11. `engine/narrative.js` (no compile-time dependencies; runtime requires `inkjs` global)
 12. `engine/balance.js` (no dependencies; pure-function namespace)
-13. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`, and (when used) `Engine.Narrative` and `Engine.Balance`.
-14. Scenes (after the scripts they reference).
-15. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
+13. `engine/prng.js` (no dependencies; seeded PRNG class)
+14. Scripts. The general rule is "any order," with the constraint that a script must be defined before any other script that references it via the `Engine` namespace. In particular, `scripts/shape-sprite.js` must be defined before any character script that wraps a `ShapeSprite` instance (`games/clown-brawler/scripts/*` from v2 onward). Other scripts depend only on `Engine.Script`, `Engine.input`, `Engine.signals`, `Engine.audio`, `Engine.storage`, and (when used) `Engine.Narrative`, `Engine.Balance`, and `Engine.PRNG`.
+15. Scenes (after the scripts they reference).
+16. A small bootstrap snippet that gets the canvas element, sizes it per the logical-canvas convention (see "Logical canvas and viewport bootstrap"), instantiates `Engine.Game` (optionally with `{ gameName: '<name>' }`), sets the initial scene, and calls `start()`.
 
 Games that use narrative additionally inline `engine/lib/inkjs.js` **before step 1** (or, in the bundle-inlining path described below, before the bundle). The inkjs UMD wrapper installs the `inkjs` global at script-load time; `engine/narrative.js` reads that global at construction time.
 
@@ -353,4 +372,5 @@ Not in scope for the initial engine version, to be designed with an ADR when nee
 - Spatial partitioning for collision. The current O(N²) pairwise pass is fine up to ~20 colliders. See ADR-0010.
 - Touch input mapping. Hit-target sizing in the visual language anticipates touch (ADR-0017), but actual touch-to-pointer event handling in `engine/input.js` is deferred until a game requires it.
 - Networking and multiplayer. See `docs/resources/multiplayer.md`.
-- Balance primitive expansion. `Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling; diminishing returns, damage formulas, RNG shaping, XP curves, prestige, and dynamic difficulty adjustment are staged in `docs/resources/balance.md` and added per future ADRs.
+- Balance primitive expansion. `Engine.Balance` (ADR-0020) currently covers difficulty curves and cost scaling; diminishing returns, damage formulas, XP curves, prestige, and dynamic difficulty adjustment are staged in `docs/resources/balance.md` and added per future ADRs.
+- Pseudo-random distribution and pity timers. `Engine.PRNG` (ADR-0026) provides raw seeded randomness; the anti-streak proc formula (`P(N) = C*N`) and pity timer are staged in `docs/resources/balance.md` as the next `Engine.Balance` increment built on top of it.
