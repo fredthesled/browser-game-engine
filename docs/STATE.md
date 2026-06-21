@@ -32,6 +32,10 @@ Nothing blocked. Rolling GitHub Releases just landed (ADR-0022); permanent downl
 
 ## Next up
 
+### Open PRs on the same base (review/merge backlog)
+
+Eight PRs are open, all based on the same main-branch commit (9dbb232). Expected ADR numbering conflicts (0022–0025 claimed by multiple PRs); resolve by renumbering sequentially after merging. STATE.md merge conflicts: keep all session log entries. PRs cover: GitHub Releases step (#1, #5 — two competing variants), registry validation (#2), game scaffolding (#3), Engine.Balance.diminish (#4), ParallaxBackground + Clown Brawler Tween (#6), build manifests for remaining games (#7), Drift crew AI + Engine.Balance.damage (#8).
+
 ### Immediate: first real raster asset
 
 The asset pipeline is in place but untested against a real image. The natural first exercise is Clown Brawler's gorilla or player sprite. Options, in order of effort:
@@ -62,7 +66,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 5. **Drift v1 bug fixes.**
 6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
 7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
-8. **Build manifests for existing games.** Add when each game is next touched.
+8. ~~**Build manifests for existing games.**~~ Done (session 2026-06-20).
 
 ## Deferred to shipping mode
 
@@ -103,6 +107,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
 - **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
+- **Scaffold new games** via the Actions tab: `.github/workflows/scaffold.yml`, inputs `name` (slug) and `title`. Creates `games/<name>/build-manifest.json` and `games/<name>/scenes/menu.js` automatically.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
 - **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
 - **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.

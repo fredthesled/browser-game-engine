@@ -6,6 +6,9 @@
 // The gorilla holds a party balloon, drawn above its head while alive.
 // Player reference must be set via setPlayer(playerObj) before the scene starts.
 //
+// Death transition uses ShapeSprite.onDone so the dying animation timer is the
+// single source of truth; no separate _deathTimer needed.
+//
 // Emits unchanged:
 //   brawler_gorilla_attack   {}                       when an attack swing lands
 //   brawler_balloon_release  { x, y, color }          just before removal
@@ -183,7 +186,6 @@ class GorillaEnemy extends Engine.Script {
     this._attackWindupTime = 0.65;
     this._attackCooldown   = 0;
     this._stunTimer        = 0;
-    this._deathTimer       = 0;
     this._hitFlash         = 0;
 
     this._sprite = new Engine.ShapeSprite(host, {
@@ -205,9 +207,16 @@ class GorillaEnemy extends Engine.Script {
     this._hitFlash = 0.15;
     Engine.audio.play('brawler_enemy_hit');
     if (this._health <= 0) {
-      this._state      = 'dying';
-      this._deathTimer = 0;
-      this._sprite.play('dying');
+      this._state = 'dying';
+      this._sprite.play('dying').onDone(() => {
+        Engine.signals.emit('brawler_balloon_release', {
+          x:     this.host.x,
+          y:     this.host.y - 120,
+          color: this._balloonColor,
+        });
+        this._state = 'dead';
+        Engine.signals.emit('brawler_remove', { obj: this.host });
+      });
       Engine.audio.play('brawler_enemy_die');
     } else {
       this._state     = 'stunned';
@@ -229,18 +238,7 @@ class GorillaEnemy extends Engine.Script {
           this._sprite.play('walking');
         }
         break;
-      case 'dying':
-        this._deathTimer += dt;
-        if (this._deathTimer >= 0.7) {
-          Engine.signals.emit('brawler_balloon_release', {
-            x:     this.host.x,
-            y:     this.host.y - 120,
-            color: this._balloonColor,
-          });
-          this._state = 'dead';
-          Engine.signals.emit('brawler_remove', { obj: this.host });
-        }
-        break;
+      case 'dying': break; // onDone callback on the sprite handles the transition
       case 'dead': break;
     }
 
