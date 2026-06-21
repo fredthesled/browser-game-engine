@@ -1,14 +1,20 @@
 # State
 
-Last updated: 2026-06-03
+Last updated: 2026-06-21
 
 ## Current status
 
-Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
+Nine games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, Drift v1, Libromancer, and Marginalia. Plus `poc-square` as an engine smoke test.
 
 Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
 
 ## What was done in the most recent session
+
+**Session 2026-06-21 (marginalia combat scene):**
+
+1. **`games/marginalia/scenes/match.js` added.** `LibraryMatchScene` — the combat loop that was missing from the Marginalia scaffold. Implements the full state machine: `PLAYER_TURN → ANIMATING → resolveEnemy → PLAYER_TURN`, with `ENCOUNTER_WIN`, `VICTORY`, and `GAME_OVER` terminals. Spell casting applies the `effect(state)` contract from `spells.js` — including `applySpellEffect` for the `citation` spell's repeat mechanic, `chainBonus` accumulation, `extraCastThisTurn` multi-cast, and encounter `armor` absorption. Enemy turns handle heal intervals (`healEvery`/`healAmount`), alt-attacks that bypass defense (`altAttackEvery`/`altAttackDmg`), stun from `ex_libris`, and `redaction`'s attack modifier. Victory/game-over auto-transitions (0.65s) to `LibraryGameOverScene` with outcome data. Player starts at 24 HP; heals 4 HP between encounters (capped at 24). Unlocks one of the six `UNLOCK_SPELL_IDS` per encounter cleared (in order), persisted via `Engine.storage`.
+
+2. **`games/marginalia/build-manifest.json` added.** Puts Marginalia on the CI build pipeline (`.github/workflows/build.yml`). Canvas preset: regular 900×620, compact 600×820. Concat order: engine bundle → bootstrap → spells → encounters → menu → deck-select → game-over → match.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -31,9 +37,18 @@ Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, s
 
 ## Currently in progress
 
-Nothing blocked. `Engine.Balance` is ready to use; no game consumes it yet. The natural first application is a game with an explicit difficulty ramp or upgrade economy (Survivors wave scaling, or a future incremental game).
+Nothing blocked. Marginalia is now fully playable (combat scene added this session). Libromancer was already complete. `Engine.Balance` is still unused by any game; natural candidates are Survivors wave scaling or a future incremental.
 
 ## Next up
+
+### Marginalia balance tuning
+
+Playable but untuned. After a test run, adjust:
+- Starting HP (currently 24; grand_index does 6+8-pierce per cycle — may be too punishing)
+- Inter-encounter heal (currently 4 HP)
+- Whether stun should prevent alt-attacks (currently it does not)
+
+No code changes needed until someone has played it.
 
 ### Immediate: first real raster asset
 
