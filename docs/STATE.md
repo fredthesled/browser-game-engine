@@ -23,6 +23,23 @@ Settled infrastructure: engine (13 modules + bundle), audio, collision, pause, s
 5. **`docs/STATE.md` updated** (this entry).
 
 ## Previously done
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), registry validation in CI (ADR-0023), and game scaffolding script (ADR-0024).
+
+## What was done in the most recent session
+
+**Session 2026-06-20 (game scaffolding script, ADR-0024):**
+
+1. **`scripts/scaffold-game.sh` added.** Takes `<name>` (game slug) and `<title>` (display name) as arguments. Validates that the slug is lowercase/URL-safe and that `games/<name>/` doesn't already exist. Creates `games/<name>/scenes/menu.js` (a working placeholder MenuScene) and `games/<name>/build-manifest.json` (wired to `bootstrapGame`, ready for the CI build pipeline). Validates the slug regex before touching the filesystem.
+
+2. **`.github/workflows/scaffold.yml` added (ADR-0024).** `workflow_dispatch` workflow with two inputs: `name` and `title`. Runs `scaffold-game.sh` and commits the two created files back to the repo via `stefanzweifel/git-auto-commit-action@v5`. Follows the same patterns as `build.yml` and `bundle.yml` (Node 24 opt-in, Read and write permissions required for the commit-back step).
+
+3. **ADR-0024 added to `docs/DECISIONS.md`.**
+
+## Previously done
+
+**Session 2026-06-20 (registry validation in CI, ADR-0023):** Registry validation step added to `validate` job in `build.yml`. Scans `scripts/` and `scenes/` at maxdepth 1; asserts each `.js` filename appears in its folder's `_registry.md`. All 9 current root files pass.
+
+**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -72,10 +89,10 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ### Pipeline improvements
 
-1. **GitHub Releases step.** `softprops/action-gh-release@v2` with a rolling `latest-build` tag. Permanent public download URLs for built games.
+1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
-3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
-4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
+3. ~~**Game scaffolding script.**~~ Done (ADR-0024). `scripts/scaffold-game.sh` + `.github/workflows/scaffold.yml`. Dispatch with `name` + `title` to create a game skeleton.
+4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
 ### Other game work
 
@@ -124,6 +141,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 - **Animation communication format.** Read `docs/ANIM_CONFIG.md` when working on any sprite or parallax setup. When Trevor pastes or references a `.anim.json` sidecar, that is the authoritative source for frame layout and animation parameters.
 - **ezgif.com/sprite-cutter** is the recommended browser tool for verifying Kenney sheet dimensions before upload.
 - **ParallaxBackground script not yet built.** Schema for its config is in `docs/ANIM_CONFIG.md`. Build the script when the first game needs it.
+- **Scaffold new games** via the Actions tab: `.github/workflows/scaffold.yml`, inputs `name` (slug) and `title`. Creates `games/<name>/build-manifest.json` and `games/<name>/scenes/menu.js` automatically.
 - **Build pipeline is live.** Every push to `main` triggers `.github/workflows/build.yml` (game builds) and, for engine-source changes, `.github/workflows/bundle.yml` (bundle regeneration).
 - **Manifest schema** documented in `scripts/build-game.sh` header. Optional `"assets"` array supported alongside `"concat"` and `"bootstrap"`.
 - **Engine bundle fetch target**: `engine/engine.bundle.js`. Project knowledge copy is stale (see Deferred housekeeping); fetch the repo bundle when current source is needed.
