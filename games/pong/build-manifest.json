@@ -1,0 +1,17 @@
+{
+  "game": "pong",
+  "title": "Pong",
+  "output": "build/pong.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/rect-renderer.js",
+    "scripts/collider.js",
+    "games/pong/scripts/ball.js",
+    "games/pong/scripts/paddle-player.js",
+    "games/pong/scripts/paddle-ai.js",
+    "games/pong/scenes/pong-match.js",
+    "games/pong/scenes/pong-menu.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'pong', presets: { regular: { w: 800, h: 600 } }, initialScene: (g) => new PongMenuScene(g), suppressContextMenu: false });"
+}

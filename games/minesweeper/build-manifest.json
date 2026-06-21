@@ -1,0 +1,13 @@
+{
+  "game": "minesweeper",
+  "title": "Minesweeper",
+  "output": "build/minesweeper.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "scripts/pause-overlay.js",
+    "games/minesweeper/scenes/menu.js",
+    "games/minesweeper/scenes/match.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'minesweeper', presets: { regular: { w: 900, h: 600 } }, initialScene: (g) => new MinesweeperMenuScene(g), suppressContextMenu: true });"
+}
