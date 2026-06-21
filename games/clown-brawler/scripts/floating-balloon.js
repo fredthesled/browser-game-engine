@@ -1,15 +1,16 @@
 // games/clown-brawler/scripts/floating-balloon.js
 // Spawned by ClownMatchScene when a gorilla dies. The balloon floats upward
-// with slight lateral drift and fades out over ~2.5 seconds, then emits
+// with slight lateral drift and fades out over ~2.4 seconds, then emits
 // brawler_remove so the match scene can clean up the host object.
 //
 // Refactored to use ShapeSprite for the visual (per ADR-0015). The balloon
-// has a single static animation; position and alpha are driven by this script.
+// has a single static animation; position is driven manually, alpha is driven
+// by a Tween on the sprite so no separate fade counter is needed.
 //
 // Emits unchanged:
 //   brawler_remove  { obj }  when alpha reaches zero
 //
-// Depends on: Engine.Script, Engine.signals, Engine.ShapeSprite
+// Depends on: Engine.Script, Engine.signals, Engine.ShapeSprite, Tween
 // Used by: ClownMatchScene
 
 function _balloonAnimations(color) {
@@ -50,31 +51,29 @@ function _balloonAnimations(color) {
 class FloatingBalloon extends Engine.Script {
   constructor(host, config = {}) {
     super(host);
-    this._color    = config.color || '#ff1744';
-    this._vy       = -110;
-    this._vx       = (Math.random() - 0.5) * 55;
-    this._alpha    = 1.0;
-    this._fadeRate = 0.42;
-    this._done     = false;
+    this._color = config.color || '#ff1744';
+    this._vy    = -110;
+    this._vx    = (Math.random() - 0.5) * 55;
+    this._done  = false;
 
     this._sprite = new Engine.ShapeSprite(host, {
       animations:  _balloonAnimations(this._color),
       initialAnim: 'drift',
     });
+
+    // Fade alpha from 1 to 0 over 2.38s (equivalent to the previous 0.42/s rate).
+    this._tween = new Tween(this._sprite, { alpha: 0 }, 2.38, Tween.linear)
+      .onComplete(() => {
+        this._done = true;
+        Engine.signals.emit('brawler_remove', { obj: this.host });
+      });
   }
 
   update(dt) {
     if (this._done) return;
     this.host.x += this._vx * dt;
     this.host.y += this._vy * dt;
-    this._alpha -= this._fadeRate * dt;
-    if (this._alpha <= 0) {
-      this._alpha = 0;
-      this._done  = true;
-      Engine.signals.emit('brawler_remove', { obj: this.host });
-      return;
-    }
-    this._sprite.alpha = this._alpha;
+    this._tween.update(dt);
     this._sprite.update(dt);
   }
 

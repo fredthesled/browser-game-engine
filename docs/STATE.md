@@ -6,6 +6,23 @@ Last updated: 2026-06-20
 
 Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
 
+Settled infrastructure now also includes: `scripts/scaffold-game.sh` (game skeleton generator) and `.github/workflows/scaffold.yml` (workflow_dispatch wrapper).
+
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
+
+## What was done in the most recent session
+
+**Session 2026-06-20 (Clown Brawler Tween integration + build manifest):**
+
+Note: PRs #2-#5 are open (registry validation, scaffolding script, balance-diminish, GitHub releases). All four "Next up" pipeline items have been drafted in parallel sessions and are awaiting review.
+
+1. **`gorilla-enemy.js` refactored: `ShapeSprite.onDone` replaces `_deathTimer`.** The `dying` -> `dead` transition previously used a manual `_deathTimer` counter that reached 0.7s (matching the animation duration). Replaced with `this._sprite.play('dying').onDone(() => { ...emit signals... })`. The dying animation's own 0.7s duration is now the single source of truth. Removed `_deathTimer` field entirely. The `'dying'` case in `update()` is now a bare `break;`.
+
+2. **`floating-balloon.js` refactored: `Tween` replaces manual alpha tracking.** The previous code used `_alpha -= _fadeRate * dt` (rate 0.42/s = 2.38s to zero) checked each frame. Replaced with `new Tween(this._sprite, { alpha: 0 }, 2.38, Tween.linear).onComplete(() => { brawler_remove })`. Removed `_alpha` and `_fadeRate` fields. The `update()` method now calls `this._tween.update(dt)` instead of manually decrementing alpha.
+
+3. **`games/clown-brawler/build-manifest.json` added.** Puts Clown Brawler on the CI pipeline (previously manually assembled). Concat order: engine bundle -> bootstrap -> pause-overlay -> **tween.js** (new dependency from item 2) -> gorilla-enemy -> floating-balloon -> clown-player -> clown-menu -> clown-match. Output overwrites `build/clown-brawler-v2.html`. Bootstrap updated from old inline IIFE to `bootstrapGame()` per ADR-0017; preset `regular: { w: 800, h: 500 }` matches the hardcoded dimensions in the match scene. Build verified locally (`bash scripts/build-game.sh`).
+
+## Previously completed sessions
 Settled infrastructure: engine (13 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), and `Engine.PRNG` seeded random number generator (ADR-0026).
 
 ## What was done in the most recent session
@@ -91,6 +108,8 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
+3. ~~Game scaffolding script~~ — done (2026-06-20).
+4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
 3. ~~**Game scaffolding script.**~~ Done (ADR-0024). `scripts/scaffold-game.sh` + `.github/workflows/scaffold.yml`. Dispatch with `name` + `title` to create a game skeleton.
 4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
@@ -98,8 +117,8 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 5. **Drift v1 bug fixes.**
 6. **Drift crew AI.** `_redistributeCrew()` stub in `DriftMatchScene._resolveEncounter()`.
-7. **Apply Tween to Clown Brawler.** `FloatingBalloon` alpha fade, gorilla dying-state transition via `onDone`.
-8. **Build manifests for existing games.** Add when each game is next touched.
+7. ~~Apply Tween to Clown Brawler~~ — done (2026-06-20). FloatingBalloon alpha Tween + gorilla onDone.
+8. ~~Build manifest for Clown Brawler~~ — done (2026-06-20). Remaining: Pong, Survivors, HTT, Party House.
 
 ## Deferred to shipping mode
 
@@ -133,6 +152,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 ## Notes for the next session
 
+- **4 draft PRs open** (#2 registry validation, #3 scaffolding, #4 balance-diminish, #5 GitHub releases). All target `main`; merge order is arbitrary. Expect STATE.md conflicts across them — resolve by keeping all session log entries.
 - **`Engine.PRNG` available.** `new Engine.PRNG(seed)` where seed is a string or integer. Returns an instance with `float()`, `int(min, max)`, `pick(arr)`, `shuffle(arr)`. String seeds (`'daily-2026-06-20'`) are reproducible; same string always produces the same sequence. Use one instance per independent random stream. The pseudo-random distribution (anti-streak proc) Balance primitive can now be built on top of it.
 
 - **The engine bundle is CI-generated; never hand-build it (ADR-0021).** To change the engine: edit the source file(s), and add or remove a line in `engine/bundle-manifest.json` when adding or removing a module. `.github/workflows/bundle.yml` regenerates `engine/engine.bundle.js`, `node --check`s it, and commits it back. Expect the committed bundle to lag a source push by one short CI run. Do not emit the bundle in a tool call; that path timed out this session (retro 9b).
