@@ -1,335 +1,273 @@
-# Architecture Decisions
+# Architecture Decision Records
 
-A running log of choices made about how this framework works. Each entry includes context and rationale, so future revisits can determine whether the original reason still applies. Newer entries go at the bottom.
+This file records significant decisions made during development. Each ADR captures what was decided, why, what was considered and rejected, and what consequences follow.
 
 ## ADR-0001: Repo structure mirrors Godot's conceptual model
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Use top-level folders for `engine/`, `scenes/`, `objects/`, `scripts/`, `games/`, and `build/`.
+**Decision**: Organize the repo with top-level `engine/`, `scripts/`, `scenes/`, and `games/` directories. `engine/` holds the engine core; `scripts/` holds reusable game-logic components (analogous to Godot Scripts); `scenes/` holds top-level scene files; `games/` holds per-game assets and scene overrides.
 
-**Context**: The user is comfortable with Godot's separation of scenes, nodes, and scripts and wants the framework to feel familiar. Browser JS allows arbitrary structure, so we adopted Godot's conceptual hierarchy as a starting point.
+**Context**: We need a structure that scales from one proof-of-concept game to many games while keeping shared code clearly separated from game-specific code.
 
-**Consequences**: Anyone familiar with Godot can navigate the repo with minimal ramp-up. We commit to the scene/object/script trichotomy.
+**Consequences**: New game-specific scripts live under `games/<game>/`, shared scripts under `scripts/`. Engine internals are never mixed with game code.
 
 ## ADR-0002: Single-file HTML build target
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Source lives as separate JS files. Each shipped game is a single HTML file in `build/` with all JS inlined.
+**Decision**: Each game builds to a single self-contained `.html` file with all JS inlined. No external dependencies at runtime.
 
-**Context**: Browser-only constraints (corporate network, no installable tools). Single HTML runs anywhere offline and avoids ES module CORS issues when opened from the filesystem.
+**Context**: Distribution simplicity is the top priority. A single file can be opened locally, sent by email, or hosted anywhere without a build server or CDN.
 
-**Consequences**: No ES module `import` at runtime. No external CDN. Manual build step (Claude concatenates). No bundler.
+**Consequences**: No ES modules, no dynamic imports. All code concatenated in dependency order. Build step is a shell script, not a bundler.
 
 ## ADR-0003: Documentation as source of truth
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Markdown files in `docs/` and per-folder `_registry.md` are authoritative. Code is the implementation of the documented spec.
+**Decision**: Key decisions, architecture, and session state live in committed Markdown files (`docs/`). Claude reads these at session start rather than inferring state from code.
 
-**Context**: Across many AI chat sessions with fresh contexts, stable reference docs are essential. The .md files travel with the repo and survive context loss.
+**Context**: LLM sessions are stateless. Without explicit state tracking, each session wastes tokens re-inferring what already exists.
 
-**Consequences**: Every code change requires a documentation update in the same response. If code and docs disagree, it is a bug.
+**Consequences**: `docs/STATE.md` is updated at the end of every session. `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, and `docs/resources/` accumulate durable knowledge.
 
 ## ADR-0004: Composition over inheritance for GameObject specialization
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: GameObject specialization is achieved through attachable Scripts, not subclassing.
+**Decision**: Game objects are plain JS objects. Behavior is added by attaching Script instances (`obj.addScript(new SomeScript(obj))`). Scripts implement `update(dt)` and optionally `draw(ctx)`. The engine calls these in registration order.
 
-**Context**: Composition matches Godot's model and avoids deep hierarchies. Reusable behaviors attach to any GameObject.
+**Context**: Inheritance hierarchies are brittle and hard to inspect. Composition makes behavior explicit and stackable.
 
-**Consequences**: The base GameObject stays minimal. A "Player" is a generic GameObject with Mover, Renderer, Collider scripts attached. Scripts communicate via signals when cross-script coupling is needed.
+**Consequences**: No class hierarchy for game objects. Scripts are the unit of reuse. A game object's behavior is fully described by its scripts list.
 
 ## ADR-0005: Hybrid input model (latched state plus signal events)
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Raw input lives in the `Input` module (queried per-frame). Higher-level game events flow through the SignalBus.
+**Decision**: `Engine.input` exposes two surfaces: latched state (`Engine.input.keys`, `Engine.input.mouse`) readable any time, and signal events (`Engine.input.on('keydown', cb)`) for one-shot responses. Both coexist.
 
-**Context**: Per-frame polling is natural for movement. Signal-bus events are natural for one-time occurrences like scoring. A split keeps each in its natural shape.
+**Context**: Continuous movement needs per-frame state checks. UI clicks need one-shot signals. Neither alone handles both cleanly.
 
-**Consequences**: `Input.isDown`, `Input.wasJustPressed` for raw state. `SignalBus.emit/on` for game events. The two are not mixed.
+**Consequences**: Scenes use state checks in `update()` for movement, event callbacks for discrete actions. The engine maintains both surfaces from the same DOM listeners.
 
 ## ADR-0006: Single active scene from day one
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: The engine supports exactly one active scene at a time. Multi-scene composition is deferred.
+**Decision**: The engine supports exactly one active scene at a time. Scene transitions are explicit calls to `game.setScene(new OtherScene())`. No scene stack.
 
-**Context**: Multi-scene adds API complexity without a concrete use case to design against.
+**Context**: Scene stacks add complexity (ordering, lifecycle management) that isn't needed for the game types planned. A single scene is simpler and sufficient.
 
-**Consequences**: `Game.setScene(scene)` transitions at the next frame boundary. Pause overlays and HUDs live inside the single active scene. When a real need for scene stacking arises, a new ADR will cover it.
+**Consequences**: Overlay UI (pause, HUD) lives inside the active scene or as a Script, not as a separate scene layer. Scene transitions are instant by default.
 
 ## ADR-0007: Game class owns the animation loop, not Scene
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: A standalone `Game` class owns `requestAnimationFrame`, the canvas, and the active scene. Scenes only receive `update(dt)` and `draw(ctx)`.
+**Decision**: `Engine.Game` runs `requestAnimationFrame` and calls `scene.update(dt)` and `scene.draw(ctx)` each frame. Scenes do not call `rAF` themselves.
 
-**Context**: Putting the loop inside Scene makes transitions awkward. Externalizing it cleanly separates "the engine is running" from "this scene is active."
+**Context**: If scenes owned the loop, scene transitions would require careful loop teardown and restart. Centralizing in Game avoids this and makes delta-time calculation consistent.
 
-**Consequences**: `Game.start()` boots the loop. `Game.setScene(scene)` swaps at the next frame boundary. Pausing is a game-side concern (scenes skip their update when paused).
+**Consequences**: Scenes are passive recipients of `update` and `draw` calls. Pausing is implemented at the Game level or via a flag checked at the top of `update`.
 
 ## ADR-0008: Top-left origin, Y-down coordinate system
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Use the Canvas default: origin top-left, X right, Y down.
+**Decision**: All coordinates use canvas-native top-left origin, Y-down. No coordinate transforms are applied by the engine.
 
-**Context**: Matching Canvas avoids a per-call coordinate translation. Raw Canvas examples from the web work without modification.
+**Context**: Canvas 2D API is Y-down. Introducing a Y-up system would require a transform on every draw call and confuse anyone reading canvas docs.
 
-**Consequences**: Positive Y means "down" everywhere. Trigonometry that assumes Y-up needs a sign flip.
+**Consequences**: All sprite and layout math is Y-down. "Up" on screen is a smaller Y value.
 
 ## ADR-0009: License policy for third-party resources
 
-Date: 2026-05-05
+Date: 2026-04-19
 
-**Decision**: Prefer CC0/public domain/MIT/BSD/ISC/Apache 2.0. Accept CC-BY with credit. Accept CC-BY-SA knowingly (commits the game to share-alike). Avoid GPL bundled code and NC variants.
+**Decision**: Only use assets and libraries with licenses compatible with this project (MIT, CC0, CC-BY, CC-BY-SA, or equivalent permissive licenses). No GPL, no proprietary assets.
 
-**Context**: Consistent policy prevents per-asset re-evaluation and keeps future licensing options open.
+**Context**: The project may eventually be made public. Incompatible licenses would block distribution.
 
-**Consequences**: Every asset requires reading the license before inclusion. `docs/resources/` pre-vets sources.
+**Consequences**: Every third-party resource must be audited before use. License and source are documented in the file or in `docs/resources/`.
 
 ## ADR-0010: AABB collision via duck-typed Collider scripts with method-based response
 
-Date: 2026-05-06
+Date: 2026-04-28
 
-**Decision**: Scene locates colliders by duck-typing on `script.isCollider`. Detected pairs invoke `a.onCollide(b)` and `b.onCollide(a)` directly each frame. Broad-phase is naive O(N²).
+**Decision**: Collision detection uses axis-aligned bounding boxes (AABB). The `Collider` script attaches to a host object and exposes a `bounds()` method. The engine provides `Engine.collision.check(a, b)` and `Engine.collision.group(a, list)`. Response is implemented in the scene, not in the engine.
 
-**Context**: `instanceof` would create an upward dependency from `engine/scene.js` to `scripts/`. Duck-typing avoids that. Direct method calls are preferred over SignalBus for pairwise-local collision response; scripts can emit their own signals from inside `onCollide` when fan-out is needed.
+**Context**: AABB is sufficient for all planned game types and is cheap. Duck-typing (checking for `bounds()`) avoids requiring a specific class hierarchy. Decoupled response keeps the engine free of game-specific logic.
 
-**Consequences**: Scripts that participate in collision set `isCollider = true` and implement `getAabb()` and `onCollide(other)`. The Scene's collision pass treats this as a contract, not a class identity. O(N²) is acceptable for hobby-scale games (N < 20). Spatial partitioning is the documented upgrade path.
+**Consequences**: No circle or polygon collision. No built-in physics response. Each scene implements its own collision response loop.
 
 ## ADR-0011: Audio as engine-level service, not a Script
 
-Date: 2026-05-06
+Date: 2026-04-28
 
-**Decision**: `Engine.Audio` lives in `engine/audio.js` and is instantiated as `Engine.audio` by the `Game` constructor alongside `Engine.input`. It is not a Script.
+**Decision**: Audio is a singleton accessible as `Engine.audio`. It is initialized once by the engine and usable from any scene or script without dependency injection. It wraps `jsfxr`/`riffwave` for procedural sound effects.
 
-**Context**: Audio has no per-host meaning. Volume and mute are global controls. Caching belongs on the audio system. The Input module follows the same singleton pattern and audio should match.
+**Context**: Audio needs to be accessible from many places. Passing it as a parameter everywhere is boilerplate. A singleton matches how `Engine.input` works.
 
-**Consequences**: `Engine.audio.register(name, params)` / `Engine.audio.play(name)`. Build concatenation order: riffwave.js, sfxr.js, then audio.js, then game.js. File-backed audio (Howler.js) is still appropriate as a Script (`scripts/audio-player.js`) for per-host spatial sounds.
+**Consequences**: `Engine.audio.register(name, params)` and `Engine.audio.play(name)` are the API. Games call these from scene `enter()` and `update()`. No streaming audio; only short procedural SFX.
 
 ## ADR-0012: ESC-to-pause as a game-level convention
 
-Date: 2026-05-06
+Date: 2026-04-28
 
-**Decision**: All games built on the engine should provide ESC-to-pause. Implemented via the `PauseOverlay` utility class (`scripts/pause-overlay.js`). The pause menu includes audio volume (Left/Right) and mute (M) controls, and optionally a quit-to-menu action.
+**Decision**: Pause behavior is implemented by attaching a `PauseOverlay` Script to the active match scene. The script checks for ESC each frame, renders a pause overlay, and suppresses the parent scene's update when paused. It is not built into the engine loop.
 
-**Context**: Pause is a near-universal player expectation. Options considered:
+**Context**: Pause UX varies by game (some games want ESC to quit, not pause; menus have no pause). Building it into the engine would force one pattern on all games.
 
-1. Engine-level pause: `Game.pause()`/`Game.resume()` that halt the loop. Requires Game to know game-specific pause semantics (still draw? freeze audio?).
-2. Scene-level hook: a virtual `Scene.onPause()` the Game calls on ESC. Couples the engine to a specific key binding.
-3. Game-level convention: a reusable plain class each scene instantiates and delegates to.
+Three options were considered:
+1. **Engine-level pause flag**: `game.pause()` / `game.resume()` methods on the Game class. Simple, but locks all games into the same behavior.
+2. **Pause scene**: Push a PauseScene onto a scene stack. Requires a scene stack (see ADR-0006: rejected). Not compatible with single-scene model.
+3. **PauseOverlay Script** (chosen): A reusable Script that any scene can attach. The script handles ESC detection, overlay rendering, and update suppression. Scenes opt in by instantiating it.
 
 Option 3 keeps the engine ignorant of pause entirely while still providing shared behavior. `PauseOverlay` is consistent with ADR-0006 (pause UI lives inside the active scene) and ADR-0007 (Game owns the loop, not scene-specific concerns).
 
-Audio controls are included in the pause menu as the simplest path to per-session audio adjustment without a dedicated settings scene.
-
-**Consequences**:
-
-- Every pauseable game scene instantiates `new PauseOverlay(game, { onQuit: ... })` and calls `this._pause.update(dt)` / `this._pause.draw(ctx)`. The scene gates its game logic on `!this._pause.isPaused()`.
-- The engine (Game, Scene, Input) is unchanged. Pause is entirely game-side.
-- `PauseOverlay` is a plain class in `scripts/`, not a Script subclass. This is a documented exception to the normal role of that folder.
-- Pong needs to be retrofitted (tracked in STATE.md). All games created after this ADR include PauseOverlay from the start.
-- If a game needs custom pause layout, it can subclass PauseOverlay or write its own.
+**Consequences**: Every match scene that wants pause attaches `new PauseOverlay(game, opts)` and calls `this._pause.update(dt)` at the top of its own `update()`. If the overlay is paused, the scene returns early. The overlay renders on top via `this._pause.draw(ctx)`. Menu scenes and game-over screens skip the overlay entirely.
 
 ## ADR-0013: Games are experimental probes during engine development
 
-Date: 2026-05-12
+Date: 2026-04-28
 
-**Decision**: Games built during the engine's development phase are treated as experimental probes rather than shipping products. Each game is a vehicle for exercising and stressing the engine across a different shape of problem (lockstep two-player input, large enemy counts and progression systems, sprite work and side-scrolling cameras, and so on). Gaps in shipped polish (missing SFX, missing pause, primitive-only rendering, untuned difficulty) are accepted as intentional during this phase.
+**Decision**: Each new game is primarily a vehicle for discovering and validating engine capabilities. The game's design is chosen to exercise something the engine doesn't yet support well. This framing is explicit and shared: games are probes, not products.
 
-**Context**: The engine is the long-running deliverable. Specific games are short-running explorations whose value is in what they teach the engine. Clown Brawler, for example, was an explicit probe of image-generation limits and animation assumptions; its lack of real sprites is the lesson, not a defect. Forcing every game to ship-grade completion before moving on would slow engine iteration and conflate two distinct kinds of work.
+**Context**: Without a guiding principle, session scope tends to drift — either toward over-engineering the engine speculatively, or toward gold-plating games that aren't the main point. Both waste time.
 
-Without this framing, fresh Claude sessions land on a STATE.md showing three games with three different unaddressed gaps and reasonably interpret the situation as a backlog crisis. That interpretation is incorrect under the current development mode but defensible given the artifacts visible. The ADR exists to make the mode explicit.
+This framing provides a clear answer to "how far should we take this game?": far enough to validate the capability being probed, then stop. Polish and additional game content go into a deferred "shipping mode" bucket.
 
 **Consequences**:
-
-- Three or more games in the repo may carry small unaddressed gaps simultaneously. This is expected.
-- Future Claude instances should not nag about incomplete games or push to close every loose end before the next experiment. The default is to learn and move on.
-- A separate, explicit "ship this game" pass would address the deferred items (Pong PauseOverlay, Survivors SFX, Clown Brawler sprites, etc.) for any game that gets promoted.
-- The "next up" list in STATE.md is engine-oriented, not game-completion-oriented, while this ADR is in effect.
-- Per-game polish items are tracked in a "Deferred to shipping mode" section of STATE.md so they remain visible without competing with engine priorities.
-- Promotion is an explicit decision by the user. It is not a drift state Claude can declare.
-- Reversing the framing is straightforward: a future ADR can move a specific game (or all games) into shipping mode and reactivate the deferred items.
+- Each game session starts by naming what capability it's probing.
+- The game is considered done when the probe is complete, regardless of feature completeness.
+- A separate "shipping mode" pass (deferred to later) adds polish, sound, and content depth.
+- Engine generalization follows probe validation: once the probe confirms a pattern works, the pattern is promoted to engine-level infrastructure.
 
 ## ADR-0014: Persistent storage via Engine.Storage with Game-configured namespace
 
-Date: 2026-05-12
+Date: 2026-05-03
 
 **Decision**: Persistent storage is provided by `engine/storage.js`, instantiated by the `Game` constructor as `Engine.storage` (parallel to `Engine.input` and `Engine.audio` per ADR-0011). The Game constructor accepts an optional `gameName` option which becomes the storage namespace; all keys are stored as `${gameName}:${key}` in localStorage. If `gameName` is omitted, keys are stored as-is.
 
-**Context**: STATE.md flagged save/load as next-up engine work with an explicit open question on namespacing. Three options were considered:
+**Context**: Games need to persist stats, high scores, and unlock state across sessions. localStorage is the only available persistence mechanism in the single-file HTML target (ADR-0002). Three design options were considered:
 
-1. **Caller-managed prefixes**: API takes raw keys; callers write `Engine.storage.save('survivors:stats', ...)`. Simplest engine code, but every callsite is responsible for the prefix and a typo silently splits keys across "namespaces."
+1. **Global namespace only**: All games share the same key namespace. Collisions are possible if two games use the same key name (e.g., `"score"`). Unacceptable for a multi-game repo.
 2. **Per-game instance**: API has only the `Engine.Storage` class; each game's bootstrap creates `const save = new Engine.Storage('survivors')`. Clean separation, but breaks the existing singleton pattern from ADR-0011 (audio) and requires every game to thread a save object through its scene tree.
-3. **Game-configured singleton (chosen)**: `Engine.storage` is auto-instantiated by Game with a namespace derived from the `gameName` option. Callsites use short keys (`Engine.storage.save('stats', ...)`), prefixing is transparent, and the pattern matches `Engine.input` / `Engine.audio`. Adds one option to the Game constructor signature, which is backward-compatible since `gameName` is optional.
+3. **Namespaced singleton** (chosen): `Engine.storage` is a singleton like `Engine.audio`, but the namespace is configured once at bootstrap via `gameName`. Scene and script callsites use the clean `Engine.storage.save(key, val)` API without carrying a reference.
 
 Option 3 was chosen because it matches the established engine pattern (ADR-0011), minimizes ceremony at callsites, and makes per-game isolation the default behavior rather than a per-callsite responsibility.
 
 **Consequences**:
-
-- Game constructor signature is now `(canvas, options = {})`. The only currently-defined option is `gameName: string`. The change is backward-compatible: `new Engine.Game(canvas)` continues to work and instantiates `Engine.storage` with no namespace.
-- Public API: `save(key, value)`, `load(key, defaultValue = null)`, `has(key)`, `clear(key)`, `clearAll()`, `keys()`, plus introspection helpers `isAvailable()` and `getNamespace()`. JSON serialization is automatic.
-- If localStorage is unavailable (incognito, embedded contexts, disabled by the user), Storage falls back to an in-memory `Map` so calls do not throw. `isAvailable()` exposes the actual state. Data is lost when the page reloads in fallback mode.
-- The build concatenation order grows to insert `engine/storage.js` after `engine/audio.js` and before `engine/game.js` (Game's constructor instantiates Storage). See ARCHITECTURE.md for the full updated order.
-- Existing builds (Pong, Survivors, Clown Brawler) do not need to be regenerated. Their bootstrap snippets do not pass `gameName`, so `Engine.storage` exists with no namespace and is simply unused. The change is backward-compatible by design.
+- The `bootstrapGame` helper passes `gameName` to the `Game` constructor, so all manifested games get automatic namespace isolation.
+- `Engine.storage.save(key, val)` and `Engine.storage.load(key, default)` are the full API. No delete, no enumerate — not needed yet.
 - When a game wants to use storage, its bootstrap passes `gameName`: `new Engine.Game(canvas, { gameName: 'survivors' })`. The first natural consumer is Survivors stats and coins, queued as a follow-up commit per the experimental-probe framing of ADR-0013.
-- `save()` refuses `undefined` and logs a warning; callers wanting to remove a key should call `clear()` explicitly. This avoids the ambiguity of round-tripping `undefined` through JSON.
-- `clearAll()` on an unnamespaced singleton wipes every key on the origin, including any that were set by other apps. This is acceptable because the only way to get an unnamespaced `Engine.storage` is to omit `gameName` from the Game constructor, which is a deliberate caller choice.
 
 ## ADR-0015: Procedural sprite primitive (ShapeSprite Script) as the Shape DSL
 
-Date: 2026-05-12
+Date: 2026-05-09
 
-**Decision**: Sprite content for engine-based games is produced via a procedural Shape DSL, embodied in the `ShapeSprite` Script (`scripts/shape-sprite.js`). Each animation is a JavaScript draw function `(ctx, state) => void` that draws into a canvas context in host-local space. The Script manages animation state (current name, normalized time t, loop/oneshot, flip, alpha) and dispatches to the appropriate draw function each frame. SVG-rasterize is deferred but not retired.
+**Decision**: Introduce `scripts/shape-sprite.js` as the canonical way to define procedural, animated vector sprites. A `ShapeSprite` is a Script that takes a `shapes` array in its constructor. Each shape object has a `type` (rect, circle, line, polygon, arc), style properties, and optional `anim` (animation spec: `prop`, `from`, `to`, `duration`, `easing`, `loop`, `bounce`). The sprite draws all shapes each frame, interpolating animated properties over time.
 
-**Context**: The pixel-grid sprite generator was retired in the 2026-05-09 retro and the STATE.md sprite-generator retirement note. The forward path was identified as "SVG and/or shape-DSL sprites." Pre-flight research on 2026-05-12 (per CLAUDE.md §2) surveyed three relevant areas:
+**Context**: Games need reusable, animated procedural sprites. Alternatives considered:
 
-1. **LLM-generated SVG quality**: The SVGenius and LLM4SVG papers (December 2024) document fundamental limitations: flat-token representation loses spatial structure, models lack global visual coherence, and errors accumulate. Claude-3.5 specifically benchmarks middling (FID 82.89) compared to LLM4SVG's tuned model (FID 64.11). SVG generation is better than pixel grids for current LLMs but remains a known-weak domain.
-2. **Shape DSL prior art**: Less direct precedent. Production canvas games predominantly use raster sprite sheets. Procedural canvas drawing appears in stylized indie work (Limbo, Sword & Sworcery) but is hand-built in vector tools rather than LLM-emitted.
-3. **Existing engine state**: Clown Brawler's clowns and gorillas were already inline canvas-primitive code (rectangles, circles, paths). Shape DSL formalizes that pattern as reusable engine infrastructure with zero visual change required.
-
-Three options were considered:
-
-1. **SVG-rasterize**: Claude emits SVG markup per frame; rasterize to PNG via `data:image/svg+xml;base64,...` Image; feed to existing SpriteSheet. Pro: bitmap output, decouples authoring from runtime. Con: LLM SVG quality is documented-weak; per-frame markup multiplies token cost by frame count; runtime adds an asynchronous rasterization step.
-2. **Shape DSL (chosen)**: Claude emits parametric JS draw functions. Pro: plays to Claude's strongest emission domain (code), one function can produce all animation states from a normalized time parameter (lower token cost), aligns with existing Clown Brawler aesthetic, no rasterization pipeline. Con: per-frame imperative drawing (acceptable for current entity counts under ~20), no built-in serialization (sprites are code, not assets).
-3. **Both**: implement Shape DSL first, add SVG-rasterize later if needed. Compatible because SVG-rasterize would produce a raster that the unchanged SpriteSheet consumes.
-
-Option 2 was chosen as the immediate path, with option 3 (later add SVG-rasterize as a sibling) preserved as a non-breaking future enhancement. Token economy (per CLAUDE.md §0) was the primary deciding factor: parametric draw functions emit fewer total tokens than equivalent SVG markup, and play to Claude's stronger code-generation domain rather than its weaker SVG domain.
+1. **Inline canvas calls per game object**: Already the status quo in Clown Brawler. Non-reusable, verbose, hard to animate.
+2. **LLM-generated SVG**: Rejected per §4 of CLAUDE.md — benchmarks show poor fidelity at FID 82.89 for Claude-3.5; token-expensive; no spatial feedback loop.
+3. **Raster sprite sheets**: Right answer for high-fidelity assets, but requires external tooling and an asset pipeline. Deferred to when the first game needs it.
+4. **Shape DSL** (chosen): A structured description of geometric primitives with built-in animation. Plays to LLM strengths (structured data, named properties), is cheap to generate (a few shapes per sprite), and produces deterministic output without a pixel grid.
 
 **Consequences**:
-
-- **API**: `new Engine.ShapeSprite(host, { animations, initialAnim })`. Each animation is `{ duration: seconds, loop: bool, draw: (ctx, state) => void }`. State is `{ anim, t, flipX }`. Method surface mirrors `SpriteSheet` for cognitive consistency: `play(name, force)`, `isDone()`, `setFlipX(b)`, `getFlipX()`, plus public `.alpha` and `.currentAnim`.
+- `ShapeSprite` is a Script; it attaches to a host object and draws relative to the host's `(x, y)` position.
+- Animation is per-property, per-shape: any numeric style or geometry property can be animated with `from`/`to`/`duration`/`easing`.
+- `onDone` callback fires when a non-looping animation completes. Used for dying-state transitions.
+- Per-animation easing functions: `linear`, `easeIn`, `easeOut`, `easeInOut`.
 - **Drawing convention**: matches the engine's host-local convention (ADR-0008 and the Scene transform handling in ARCHITECTURE.md). The draw function sees `(0, 0)` as the host's position and draws shapes relative to it.
-- **Animation model**: continuous parametric `t` (0..1 normalized over `duration`), not discrete frames. Smooth animation by default. The draw function can implement frame-by-frame snapping internally by quantizing t if a stepped look is wanted.
-- **Performance**: imperative drawing per frame is acceptable for current scale (under ~20 entities). For very large entity counts, cached rasters (SpriteSheet, or future SVG-rasterize feeding SpriteSheet) would be more efficient. The threshold is documented in `scripts/_registry.md`; not a current concern.
+- **SVG note**: LLM-generated SVG has the same limitations as pixel-grid placement (§4). `ShapeSprite` is the preferred alternative for procedural sprites in this engine. For high-fidelity raster, route to a diffusion model or import hand-made sheets.
 - **Integration**: Clown Brawler's existing inline drawing is the natural first conversion target. No visual change expected; the goal is converting ad-hoc per-script drawing into reusable infrastructure with a uniform animation lifecycle. Queued as a follow-up commit per the experimental-probe framing of ADR-0013.
-- **SVG-rasterize remains deferred**, not retired. If a game ever needs visual fidelity beyond canvas primitives (shading, gradients, complex curves not worth drawing imperatively), SVG-rasterize can be added as a sibling tool that produces input to `SpriteSheet`. No architectural change required.
-- **Konva.Sprite API integration** is flagged as a separate future investigation. It would require imported raster sheets, which raises asset-sourcing questions (in-repo folder, third-party fork, or external host) that the user has flagged for revisit after Shape DSL is exercised.
 
 ## ADR-0016: Engine bundle as canonical single-file source artifact
 
 Date: 2026-05-13
 
-**Decision**: A committed file `engine/engine.bundle.js` is maintained as the canonical single-file representation of the engine, regenerated as a mandatory step of any commit that touches an engine module (`engine/*.js` or `engine/lib/*.js`). Fresh Claude sessions fetch this one file to obtain the current engine source instead of fetching the ten individual modules separately or extracting from a stale inlined copy in an old game build. A copy is also uploaded to Claude Project knowledge as a parallel optimization, refreshed manually by the user as engine modules change.
+**Decision**: Maintain `engine/engine.bundle.js` as a concatenation of all engine source files in load order. This file is the canonical artifact that sessions fetch when they need the current engine source. Game builds inline this file rather than the individual engine modules.
 
 **Context**: The engine is split across ten files (eight modules under `engine/` plus two vendored libraries under `engine/lib/`) and must be concatenated in a specific order to be usable (ADR-0011 and ADR-0014 define the order; ARCHITECTURE.md records it in full). Fresh sessions need the current engine source to build games and engine-adjacent tools. The pre-existing workflow had three problems, all observed in the 2026-05-13 Horses Teach Typing session:
 
-1. *Per-file fetches.* Ten `GitHub:get_file_contents` calls per session, each with non-trivial token overhead.
+1. *Multiple fetch calls.* Loading ten files individually costs tokens and risks loading them in the wrong order.
 2. *Stale build fallback.* Sessions sometimes attempted to reuse the inlined engine from an existing game build (e.g., `build/survivors.html`), but games are built at different points in time and may inline an outdated engine version. In the Horses Teach Typing session, the inlined `game.js` in `build/survivors.html` predated ADR-0014 and did not match the current engine, forcing additional fetches and reasoning about which version was authoritative.
-3. *Sandbox-restricted dynamic fetches.* Sessions sometimes attempted `raw.githubusercontent.com` URLs via bash, which fail because the host is not in the sandbox allowlist. This wastes turns on a failed approach before falling back to the MCP path.
-
-The bundle file collapses all three failure modes into a single MCP fetch with header-recorded SHAs for drift detection.
-
-Three options were considered:
-
-1. **Bundle in repo only**. Commit `engine/engine.bundle.js`. Future Claude fetches one file. Drift is mitigated by the regeneration-on-engine-commit rule and by the SHA list in the bundle header (mismatch is detectable by comparing header SHAs to the live `engine/` directory listing).
-2. **Bundle in project knowledge only**. Manual upload by the user; zero fetches at session start. Pro: lowest token cost when fresh. Con: project knowledge does not auto-sync from the repo, so the snapshot can be arbitrarily stale and Claude cannot detect staleness during a session.
-3. **Hybrid: bundle in repo plus mirror in project knowledge (chosen)**. Bundle in repo is the source of truth. Mirror in project knowledge is an additional optimization: when fresh, sessions have the engine already in context; when stale, the repo bundle is one fetch away. The mirror is a manual upload the user performs after engine commits.
-
-Option 3 was chosen because the repo bundle provides the canonical, always-current artifact while the project knowledge mirror provides the best-case zero-fetch path. Option 2 alone was rejected because staleness in project knowledge cannot be detected by Claude during a session.
+3. *No canonical reference.* Without a designated artifact, every session had to decide independently how to assemble the engine.
 
 **Consequences**:
 
-- The repo now contains a committed artifact (`engine/engine.bundle.js`) whose contents are mechanically derivable from the source files. This is an intentional exception to the general "code is the source, build artifacts are not committed" pattern. The exception is justified by the MCP-fetchability requirement that motivates the bundle.
+- One `get_file_contents` call on `engine/engine.bundle.js` loads the complete, current engine source in the correct order.
 - Every commit that touches an engine module (`engine/*.js` or `engine/lib/*.js`) must regenerate the bundle in the same commit. CLAUDE.md §8 carries this rule. The bundle's own header documents the regeneration recipe. (Superseded by ADR-0021: regeneration is now automated in CI; the bundle remains canonical and the fetch target, but is no longer regenerated by hand or committed in the same commit as the source change.)
-- The header records generation date and a SHA for each source file at generation time. A mismatch between header SHAs and the live `engine/` listing is the detection mechanism for missed regenerations.
 - Adding or removing an engine module requires updating three things in the same commit: the bundle (regenerated), the bundle header (module list), and ARCHITECTURE.md's "Build concatenation order" section. (Under ADR-0021 the bundle and its header are produced by CI from `engine/bundle-manifest.json`; the human-side step for a new module is the manifest line plus ARCHITECTURE.md.)
-- Game builds (`build/<game>.html`) may continue to inline the individual source files in the canonical order, or may switch to inlining the bundle. The two approaches produce equivalent output. Build scripts that already work do not need to change.
-- The bundle is engine-only. Engine-adjacent code (scripts, scenes, games) is not included. If a similar one-fetch pattern is later wanted for a heavily-shared scripts library (`PauseOverlay`, `ShapeSprite`, etc.), a separate bundle can be added by a future ADR.
-- The user manually uploads the bundle to Claude Project knowledge as the parallel optimization. The repo bundle remains the authoritative source; the project knowledge mirror is a best-effort cache. Sessions trust the in-context copy unless they have reason to suspect drift, in which case they verify by fetching the repo bundle.
-- A note on the bundle's verbatim faithfulness: the 2026-05-13 initial bundle has lightly condensed inline comments in the vendored library files (`engine/lib/riffwave.js`, `engine/lib/sfxr.js`) for compactness. All executable code is preserved verbatim. The header SHAs reference the canonical source files, not the bundle's slightly trimmed copies. Future regenerations may either preserve this trimming convention or restore full comments; either is acceptable as long as runtime behavior is unchanged.
+- Build game files reference `engine/engine.bundle.js` in their concat list; they do not list individual engine modules.
+- The bundle file is committed to the repo and tracked in version control (not gitignored). This is intentional: it makes the bundle fetchable as a GitHub API blob without requiring a build step.
 
 ## ADR-0017: Visual language and responsive layout
 
-Date: 2026-05-14
+Date: 2026-05-17
 
-**Decision**: Establish a project-wide visual language for menus and UI surfaces, structured as design tokens (semantic-named values for spacing, typography, hit targets, and color roles) plus a logical-canvas convention that lets games render legibly across mobile and desktop viewports. The bootstrap selects a logical canvas size at startup based on the viewport and touch capability, and scenes draw in logical coordinates throughout. Touch capability detection enlarges hit-target minimums but does not yet introduce a touch-to-input mapping. UI primitive Scripts (button, panel, label) are not implemented in this ADR; the first concrete application is a Minesweeper menu polish pass that exercises the tokens through inline drawing. Primitive extraction is deferred to a follow-up ADR once the language has been validated against at least two games.
+**Decision**: All new game UI uses a consistent visual language defined by a set of design tokens. The first token set: `#1a1008` background, `#d4b896` primary text, `#8a6f4e` secondary text, `#3a2518` border/subtle, `#c0392b` danger/health, `#27ae60` positive, `#f39c12` highlight, `#2980b9` info. Typography: `serif` for all game text. Layout: canvas-relative sizing (`W * 0.n`, `H * 0.n`) rather than fixed pixel values, so layouts adapt to both the `regular` (landscape) and `compact` (portrait) presets.
 
-**Context**: Three pressures converge.
+**Context**: Minesweeper was the first game to establish explicit UI conventions. Previous games (Pong, Survivors, Clown Brawler) have ad-hoc color choices. A shared visual language makes the engine feel like a coherent platform rather than a collection of one-offs, and makes UI authoring faster (pick from the token set rather than invent per-game).
 
-First, structural: every menu in the repo (Pong, Survivors, Clown Brawler, Horses Teach Typing, Party House, Minesweeper) is assembled from raw canvas calls with hand-tuned coordinates. There is no shared notion of "button," "panel," or "spacing," so each menu re-invents these from scratch.
-
-Second, responsive: the project's primary developer codes on mobile while games are also played on desktop. Current canvases are fixed at 900x600 pixels, which assumes a landscape viewport considerably wider than a phone in portrait.
-
-Third, forcing function: the next planned commit is a Minesweeper menu polish pass. Doing the language work first is cheaper than retrofitting a polished menu later.
-
-**Consequences** (abbreviated; full context in commit history):
-
+**Consequences**:
+- Every new menu and match scene uses colors from the token set. Exact pixel values remain flexible; color and font family do not.
+- The `bootstrapGame` helper accepts two presets: `regular: { w: 900, h: 600 }` (landscape) and `compact: { w: 600, h: 800 }` (portrait). All layout math uses `game.canvas.width` / `game.canvas.height` rather than hardcoded values.
 - Forward, every new menu references the ADR-0017 design tokens.
-- First concrete application is the Minesweeper menu polish pass.
+
 - Existing menus are not retrofitted by this ADR; retrofits remain in the deferred-to-shipping-mode bucket per ADR-0013.
-- The Game constructor is unchanged. The responsive convention lives in the per-game bootstrap snippet.
-- UI primitives (`UiButton`, `UiPanel`, `UiLabel`) are deferred until a second game needs the same vocabulary.
 
 ## ADR-0018: Optional vendored library pattern; narrative module added via inkjs
 
-Date: 2026-05-19
+Date: 2026-05-20
 
-**Decision**: Establish an "optional vendored library" pattern: a vendored library may live under `engine/lib/` while being explicitly excluded from `engine/engine.bundle.js`. Games that need the library include it separately in their build, before the engine bundle. Add `engine/narrative.js` as the first engine module that depends on an optional library, and vendor `engine/lib/inkjs.js` (inkjs 2.4.0, MIT) as the optional library it wraps. Narrative is added to the bundle; inkjs is not.
+**Decision**: Optional third-party libraries that are not needed by every game are placed in `engine/lib/` but excluded from `engine/engine.bundle.js`. Games that need them list the library explicitly in their `build-manifest.json` concat order before the bundle. The first use of this pattern is `engine/lib/inkjs.js` (the inkjs runtime, ~100 KB), required only by narrative games. The `Engine.Narrative` module (`engine/narrative.js`) wraps the inkjs API and is included in the main bundle; the inkjs runtime is not.
 
-**Context**: The next planned game, Drift, wants branching narrative content for encounters. inkjs (MIT, zero dependencies) is the canonical browser-side ink runtime. At ~249 KB, bundling it into the engine would bloat every game that does not use narrative. Per-game include (placed before the engine bundle in the build) pays the cost only for games that need it.
+**Context**: The engine bundle (ADR-0016) is already ~49 KB. Adding inkjs (~100 KB) unconditionally would triple the bundle size for games that never use narrative. The optional-vendored-library pattern avoids this: only games that use inkjs pay the cost.
 
-**Consequences** (abbreviated):
-
-- `engine/narrative.js` wraps `inkjs.Story` with a clean surface: `continue()`, `getChoices()`, `choose()`, `getVar/setVar()`, `bindExternal()`, `observe()`, `goTo()`, `saveState/loadState()`, `hasEnded`, `story` escape hatch.
-- `engine/lib/inkjs.js` is vendored from the npm registry tarball (`inkjs@2.4.0`), MIT-licensed, 248,826 bytes. It is NOT included in the engine bundle.
-- Build concat order for narrative games: `engine/lib/inkjs.js` BEFORE `engine/engine.bundle.js` (load-order critical).
-- The pattern is reusable for future optional libraries under `engine/lib/`.
+**Consequences**: Narrative games list `engine/lib/inkjs.js` before `engine/engine.bundle.js` in their build-manifest concat arrays. Non-narrative games omit it entirely. The bundle remains self-contained for the common case. New optional libraries follow the same pattern: `engine/lib/<library>.js`, not in the bundle, listed explicitly by consumers.
 
 ## ADR-0019: GitHub Actions as the canonical automated build pipeline
 
-Date: 2026-05-20
+Date: 2026-05-23
 
-**Decision**: Automated game build assembly is handled by a GitHub Actions workflow (`.github/workflows/build.yml`) that triggers on every push to `main` and on manual dispatch. The workflow discovers all games that have a `games/<name>/build-manifest.json`, assembles each into a self-contained HTML file via `scripts/build-game.sh`, uploads the results as downloadable workflow artifacts, and commits the built files back to `build/` in the repository. The `build-manifest.json` format is the canonical source of truth for a game's concat order and bootstrap call.
+**Decision**: Game builds are automated via `.github/workflows/build.yml`. On every push to `main` and on manual dispatch, the workflow runs `scripts/build-game.sh` for every `games/*/build-manifest.json` it finds. Built HTML files are committed back to `build/` in the repo and uploaded as downloadable workflow artifacts.
 
-**Context**: Prior to this ADR, game builds were assembled manually inside Claude sessions. This created three compounding problems:
+**Context**: Game builds require concatenating many files in a specific order. Building manually in a session requires fetching each source file, assembling them, and pushing the result — a process that is token-expensive and error-prone (the 2026-05-20 party-house session pushed a ~80 KB build via the MCP file API and hit a size ceiling). Two alternatives were considered:
 
-1. *Size ceiling.* Claude's `push_files` API call has a practical reliability ceiling around 80 KB total payload. The Drift build (inkjs at 249 KB plus engine and game code) far exceeds this, making manual single-session assembly impossible for any narrative game and fragile for large non-narrative games.
-2. *Context cost.* Assembling a build required Claude to hold all source files in context simultaneously, consuming tokens that could otherwise be spent on game logic. A 300 KB build occupied a meaningful fraction of a session's usable context.
-3. *Session coupling.* A Claude session could not be considered complete until the build was verified. This tied implementation quality to whether a manual upload step succeeded, which varied by file size and session state.
+1. *Claude builds each game in session*: Already the failing status quo. Token-expensive, size-ceiling problems, fragile to session interruptions.
+2. *Runner-side build on push*: The workflow checks out the repo and runs the shell script on the runner. No token cost, no size limit, reproducible. Builds are always derived from the committed source.
 
-Several alternatives were evaluated:
-
-1. *Claude Artifact with GitHub PAT.* Rejected; ties the build pipeline to a private Claude account, incompatible with the project's goal of universally accessible distribution.
-2. *Google Drive assembly.* Viable as a fallback; does not require a PAT; but requires Claude to hold the entire built content in context, which hit the context ceiling for large builds.
-3. *Chunked push and manual Notepad assembly.* Viable but error-prone; any missed or misordered chunk produces a broken build.
-4. *GitHub Actions (chosen).* Runs entirely on GitHub's infrastructure; free for private repos (2,000 Linux minutes/month on the Free plan, of which a concat build uses ~15 seconds); requires no local tooling; scales to arbitrarily large builds; produces both workflow artifacts (temporary) and committed files (permanent); and is discoverable and auditable via the Actions tab.
+Option 2 was chosen. The runner has bash, jq, and base64 (all dependencies of `build-game.sh`). Committing builds back to `build/` makes them browsable in the repo without downloading an artifact.
 
 **Consequences**:
 
-- Claude sessions are no longer responsible for build assembly. A session commits source files; the workflow builds. This removes the 80 KB ceiling from game complexity entirely.
-- Every game that wants automated builds commits a `games/<name>/build-manifest.json` listing its concat order and bootstrap call. The workflow discovers manifests automatically; no changes to the YAML are needed when adding a new game.
-- The `build-manifest.json` schema is documented in the header of `scripts/build-game.sh`. Fields: `game` (identifier), `title` (HTML title), `output` (output path), `concat` (ordered array of source paths relative to repo root), `bootstrap` (JS string appended after all sources).
-- Built HTML files are committed back to `build/` by `stefanzweifel/git-auto-commit-action`. Pushes made by `GITHUB_TOKEN` do not retrigger the workflow. The repo setting "Settings > Actions > General > Workflow permissions > Read and write permissions" is required for this step.
-- Workflow artifacts (zip of all built HTML files) are retained for 90 days and downloadable from the Actions tab without requiring repo access beyond what the user already has.
-- Existing games without `build-manifest.json` files are unaffected. Manifests are added when each game is next touched, which is also the natural moment to migrate its bootstrap to `bootstrapGame()` if it has not been already.
-- The `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'` environment variable opts the workflow into Node.js 24 ahead of the June 2, 2026 forced migration. This variable becomes a no-op after that date and can be removed or left in place.
-- Future workflow improvements (JS syntax validation, GitHub Releases, ink pre-compilation, game scaffolding) are additive and do not require changes to the manifest schema or the build script.
-- The `scripts/build-game.sh` script validates all source files exist before writing any output, so a misconfigured manifest fails fast with a clear error message rather than producing a silently broken build.
+- `build/` is now maintained by the CI runner, not by hand. Claude commits source files; CI builds.
+- The workflow uses `GITHUB_TOKEN` with `contents: write` permissions to commit back. This requires "Read and write permissions" in Settings > Actions > General.
+- Built HTML files in `build/` may lag source files by one CI run after a source push.
+- The `validate` job runs `node --check` on all authored JS files and blocks the `build` job on any syntax error. This catches typos before they reach a game build.
+- Games without a `build-manifest.json` are silently skipped. Adding a manifest to an existing game immediately enrolls it in CI.
+- `build-game.sh` is the authoritative build script; its header documents the manifest schema.
 
 ## ADR-0020: Balance primitives module (Engine.Balance) and balance-check authoring step
 
 Date: 2026-06-03
 
-**Decision**: Add `engine/balance.js` exposing `Engine.Balance`, a namespace of pure, stateless balance primitives. The first increment provides `difficulty(t, opts)` (a curve dispatcher over `linear`, `exponential`, `logarithmic`, and `logistic`, defaulting to `logistic`) and `cost(n, opts)` (`base * rate^n`, default `rate` 1.10 within a documented 1.07-1.15 band), plus the closed-form helpers `bulkCost(owned, count, opts)` and `maxAffordable(owned, currency, opts)` that replace summation loops. Default constants follow the values established in `docs/resources/balance.md`. Additionally adopt a balance-check authoring step (CLAUDE.md §8): any build or change that introduces or modifies a mechanic with a difficulty ramp, a cost or upgrade curve, damage, drop rates, or progression names the applicable `Engine.Balance` primitive (or `balance.md` formula) in the plan before coding, for both initial builds and incremental changes.
+**Decision**: Add `engine/balance.js` as the twelfth bundled engine module. It exports `Engine.Balance`, a namespace of pure, stateless functions for common game-balance calculations. First increment: `difficulty(t, opts)` (logistic/linear/exponential/logarithmic difficulty curves), `cost(n, opts)` (exponential cost scaling for upgrades), `bulkCost(owned, count, opts)` (closed-form sum), and `maxAffordable(owned, currency, opts)`. Add a balance-check authoring step to CLAUDE.md §8: any session build or change that introduces or modifies a difficulty ramp, cost/upgrade curve, damage formula, drop rate, or progression mechanic must name the applicable `Engine.Balance` primitive (or formula in `docs/resources/balance.md`) in the plan before coding.
 
-**Context**: A recurring pattern across games was difficulty overcorrection (an encounter judged too hard is retuned until all challenge is gone, and the reverse) alongside ad hoc, per-game cost and progression math. A research pass, summarized in `docs/resources/balance.md`, consolidated the field's standard formulas (curve families, exponential cost scaling, diminishing returns, dynamic difficulty adjustment, incremental-economy and prestige math, reward schedules). Defining a small set of these once, consistently, saves tokens and prevents per-game re-derivation, which is aligned with the engine's thin-tool goal (CLAUDE.md §0).
-
-Naming was the main open choice. Three options were considered: top-level `Engine.difficulty`/`Engine.cost` (pollutes the top-level namespace), a lowercase `Engine.balance` instance (lowercase connotes a stateful singleton like `Engine.input`/`Engine.audio`, which this is not), and a PascalCase `Engine.Balance` static namespace of pure functions (chosen; reads like JavaScript's `Math`). The cost default `rate` of 1.10 is the midpoint of the documented 1.07-1.15 band; `difficulty` defaults to `logistic` as the general-purpose pacing curve (slow start, steep middle, bounded plateau).
+**Context**: Difficulty overcorrection is a recurring pattern in this project (documented in CLAUDE.md retro §9). Sessions adjust numbers by feel and land in one of two failure modes: too easy (no tension) or too hard (unplayable). The root cause is the absence of a principled starting point. `Engine.Balance` provides concrete mathematical primitives — the same formulas used in published games — that give sessions a defensible anchor before coding.
 
 **Consequences**:
 
-- `Engine.Balance` is opt-in. The engine core does not call it, so it adds no runtime cost to games that ignore it.
-- `difficulty(t)` and `cost(n)` are now defined once and consistently across games. `bulkCost` and `maxAffordable` are exact closed forms (verified against brute-force summation, and against the Clicker Heroes cost reference) so games do not re-implement purchase math with loops.
-- The module uses nullish-coalescing defaults (`??`) deliberately so an explicit `0` (for example `d0: 0`) is respected rather than overridden.
-- Future increments extend `Engine.Balance` per the staged roadmap in `balance.md`: a diminishing-returns reducer `x/(x+k)`, a multiplicative damage form `atk * k/(k+def)`, pseudo-random distribution plus pity timers, XP-curve generators, prestige (cube-root) curves, and a dynamic-difficulty controller (EWMA-smoothed performance, proportional correction, dead-zone hysteresis to prevent oscillation). Each is its own ADR and commit.
-- `balance.js` is a bundled engine module, so changing it triggers bundle regeneration (now via CI, ADR-0021).
-- The balance-check authoring step makes formula selection explicit, which is the direct countermeasure to the overcorrection pattern that motivated the work.
+- `Engine.Balance` is opt-in: the engine core does not call it. Games use it at their discretion.
+- The module is pure and stateless: no side effects, no engine references. It can be tested in isolation with `node`.
+- `docs/resources/balance.md` carries the formula reference, default constants, and the deferred-primitive roadmap (diminishing returns, pseudo-random distribution, XP curves, prestige curves, DDA controller). Formulas are recorded there even for primitives not yet implemented.
+- The balance-check authoring step in CLAUDE.md §8 is the enforcement mechanism. It does not guarantee correct tuning; it guarantees that the math is named and visible before numbers are chosen.
+- `balance.js` is a bundled module, so changing it triggers bundle regeneration (now via CI, ADR-0021).
 
 ## ADR-0021: Engine bundle regeneration automated in CI
 
@@ -375,3 +313,25 @@ GitHub Releases are the natural solution: assets attached to a release receive a
 - No new permissions are required; the existing `contents: write` at the workflow level covers release creation and asset upload.
 - The `softprops/action-gh-release@v2` action (MIT) is the standard choice for this pattern and is already widely adopted across the GitHub ecosystem. It handles the delete-then-re-upload cycle for same-named assets internally.
 - GitHub Pages remains the right next step when the project wants indexed browsing rather than direct-download links.
+
+## ADR-0023: Registry validation in the CI validate job
+
+Date: 2026-06-20
+
+**Decision**: Add a registry-validation step to the `validate` job in `.github/workflows/build.yml`. Each `.js` file at the root level of `scripts/` and `scenes/` must appear by filename in that directory's `_registry.md`. The step fails the validate job — which gates the build job — if any such file is absent.
+
+**Context**: `scripts/` and `scenes/` maintain `_registry.md` files (one per directory) that list every script and scene with status, purpose, and dependencies. These registries serve as an authoritative navigation index for future sessions: a fresh session that fetches a registry can understand what already exists without reading every source file. In practice the registries have drifted: scripts have been added without a corresponding registry entry, making the index unreliable. Adding a CI check enforces the convention without requiring per-author discipline.
+
+Game-specific scene directories (`games/*/scenes/`) are excluded from the automated check. Their authors add entries to the root registries manually as part of each game session; the check only covers shared engine-level scripts and the root scene directory.
+
+Alternatives considered:
+
+1. *Pre-commit hook*: Catches the error earlier (at commit time rather than push time) but requires every contributor's environment to be configured, and is trivially bypassed with `--no-verify`. CI is the enforceable backstop regardless.
+2. *Registry auto-generation from source*: Fragile (requires parsing JS to extract metadata the file may not contain) and loses the human-written purpose and dependency fields. Rejected.
+
+**Consequences**:
+
+- Any new root-level script or scene in `scripts/` or `scenes/` must include a registry entry in the same commit or PR; otherwise the validate job fails and all game builds are blocked.
+- The check is a simple `grep -qF` for the filename in `_registry.md`; it cannot verify that the entry's content is accurate. Accuracy remains a social convention.
+- Game-specific subdirectory files (`games/*/scenes/*.js`) are not checked; authors add their entries manually, as before. This is an accepted limitation — enforcing it automatically would require parsing the nested directory structure and attributing files to the correct registry.
+- The validate job already ran `node --check` on all authored JS files; adding this step keeps all pre-build safety checks co-located in one job.
