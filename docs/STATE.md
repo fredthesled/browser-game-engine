@@ -6,23 +6,19 @@ Last updated: 2026-06-20
 
 Seven games in the repo: Pong, Survivors v3, Clown Brawler v2, Horses Teach Typing v1, Party House, Minesweeper, and Drift v1. Plus `poc-square` as an engine smoke test.
 
-Settled infrastructure now also includes: `scripts/scaffold-game.sh` (game skeleton generator) and `.github/workflows/scaffold.yml` (workflow_dispatch wrapper).
-
-Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, and the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`).
+Settled infrastructure: engine (12 modules + bundle), audio, collision, pause, storage, `ShapeSprite` + `SpriteSheet`, engine bundle (ADR-0016, now CI-regenerated per ADR-0021), visual language (ADR-0017), narrative (ADR-0018), `bootstrapGame`, GitHub Actions build pipeline (ADR-0019), `Engine.Balance` difficulty/cost primitives (ADR-0020), `Tween` utility, `ShapeSprite.onDone` and per-animation easing, binary asset inlining in `build-game.sh`, the `.anim.json` / `parallax.anim.json` sidecar communication format (`docs/ANIM_CONFIG.md`), rolling GitHub Releases (ADR-0022), and registry validation in CI (ADR-0023).
 
 ## What was done in the most recent session
 
-**Session 2026-06-20 (build manifests for all remaining games):**
+**Session 2026-06-20 (registry validation in CI):**
 
-Added `build-manifest.json` files for the six games that had none: pong, survivors, clown-brawler, minesweeper, party-house, and horses-teach-typing. All manifests were locally built and verified against `scripts/build-game.sh` before commit. CI will now regenerate these games on every push to main alongside drift, libromancer, and survivors-balance.
+1. **ADR-0023: registry validation step in `validate` job.** Added a "Verify root scripts/ and scenes/ have registry entries" step to `.github/workflows/build.yml`. After the JS syntax check, the step finds every root-level `.js` in `scripts/` and `scenes/` (maxdepth 1, so game subdirs are not scanned) and asserts each filename appears in its folder's `_registry.md`. Fails the build with a clear MISSING message if any file is unregistered. Tested locally — all 9 current root files pass. Also updated the workflow header comment to mention the registry check.
 
-Manifest specifics:
-- **pong** (800x600): engine.bundle + bootstrap + rect-renderer + collider + 3 scripts + 2 scenes. No PauseOverlay (retrofit is deferred per STATE).
-- **survivors** (800x600): engine.bundle + bootstrap + pause-overlay + rect-renderer + collider + 4 scripts + 3 scenes. Excludes survivors-levelup.js (not wired into the game flow in this version).
-- **clown-brawler** (800x500): engine.bundle + bootstrap + pause-overlay + shape-sprite + 3 scripts + 2 scenes. Uses `Engine.ShapeSprite` (from shape-sprite.js) for all visuals.
-- **minesweeper** (900x600): engine.bundle + bootstrap + pause-overlay + 2 scenes. `suppressContextMenu: true` because right-click flags mines.
-- **party-house** (960x540): engine.bundle + bootstrap + pause-overlay + 2 scenes. 960x540 matched the canvas dimensions in the old hand-built HTML.
-- **horses-teach-typing** (800x500): engine.bundle + bootstrap + pause-overlay + rhythm-letter.js script + 2 scenes. 800x500 matched the old hand-built canvas.
+2. **ADR-0023 added to `docs/DECISIONS.md`.**
+
+## Previously done
+
+**Session 2026-06-19 (GitHub Releases — rolling permanent download URLs, ADR-0022):** Permanent download URLs at `releases/download/latest-build/<game>.html`.
 
 **Session 2026-06-03 (balance primitives + bundle CI):**
 
@@ -74,9 +70,7 @@ Either path requires Trevor to upload the PNG via GitHub web UI. Claude handles 
 
 1. ~~**GitHub Releases step.**~~ Done (ADR-0022). Permanent download URLs at `releases/download/latest-build/<game>.html`.
 2. **Ink pre-compilation.** `npx inkjs` at build time eliminates `sources.js` wrappers and drops the inkjs compiler from narrative game builds (~100 KB saving). Needs a scoping session.
-3. ~~Game scaffolding script~~ — done (2026-06-20).
-4. **Registry validation workflow.** Fails the build if a `.js` file in `scripts/` or `scenes/` lacks a registry entry.
-3. ~~**Game scaffolding script.**~~ Done (ADR-0024). `scripts/scaffold-game.sh` + `.github/workflows/scaffold.yml`. Dispatch with `name` + `title` to create a game skeleton.
+3. **Game scaffolding script.** `scripts/scaffold-game.sh` via `workflow_dispatch`. Reduces per-session boilerplate.
 4. ~~**Registry validation workflow.**~~ Done (ADR-0023). Fails the `validate` job if a root-level `.js` in `scripts/` or `scenes/` lacks a `_registry.md` entry.
 
 ### Other game work

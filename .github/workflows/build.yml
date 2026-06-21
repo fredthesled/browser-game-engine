@@ -3,8 +3,9 @@
 # =============================================================================
 # Two jobs run on every push to main and on manual dispatch:
 #
-#   validate  — runs node --check on every authored .js file.
-#               Fails fast if any file has a syntax error.
+#   validate  — runs node --check on every authored .js file, then checks that
+#               every root-level .js in scripts/ and scenes/ has an entry in
+#               its _registry.md. Fails fast on any error.
 #               Excludes engine/lib/ (vendored) and build/ (auto-generated).
 #
 #   build     — assembles each game with a build-manifest.json into a single
@@ -71,6 +72,31 @@ jobs:
             exit 1
           fi
           echo "All JS files passed syntax check."
+
+      - name: Verify root scripts/ and scenes/ have registry entries
+        # Each .js at the top level of scripts/ and scenes/ must appear by
+        # filename in that folder's _registry.md. Game-specific subdirectories
+        # (games/*/scripts/, games/*/scenes/) are excluded — their authors
+        # add entries to the root registries manually as part of each game
+        # session. This step catches forgotten entries for shared engine scripts.
+        run: |
+          failed=0
+          for dir in scripts scenes; do
+            registry="./$dir/_registry.md"
+            while IFS= read -r file; do
+              name=$(basename "$file")
+              if ! grep -qF "$name" "$registry"; then
+                echo "MISSING from $registry: $name"
+                failed=$((failed + 1))
+              fi
+            done < <(find "./$dir" -maxdepth 1 -name '*.js' | sort)
+          done
+          if [ "$failed" -gt 0 ]; then
+            echo ""
+            echo "$failed file(s) missing from _registry.md. Add entries and retry."
+            exit 1
+          fi
+          echo "All root scripts/scenes have registry entries."
 
   build:
     needs: validate

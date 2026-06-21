@@ -352,28 +352,42 @@ Options mirrored ADR-0019's. Manual MCP push is the failing status quo. Chunked 
 - The repo's existing "Read and write permissions" Actions setting (already required by ADR-0019) covers the commit-back step. No new permission is needed.
 - The 2026-06-03 session also left one transitional artifact: the bundle was briefly out of sync with `balance.js` (committed in `engine: add balance module`) until this workflow's first run regenerated it. This is the last time the bundle is expected to drift, since regeneration is no longer a manual step that can be forgotten.
 
-## ADR-0026: Seeded PRNG module (Engine.PRNG)
+## ADR-0022: Rolling GitHub Release for permanent download URLs
 
-Date: 2026-06-20
+Date: 2026-06-19
 
-**Note**: ADR-0022 through ADR-0025 are claimed by other open PRs (registry validation, scaffolding, diminishing-returns, and damage primitives). This ADR is numbered from the main-branch baseline (ADR-0021) and will be renumbered sequentially after all open PRs merge.
+**Decision**: Add a "Publish rolling 'latest-build' GitHub Release" step at the end of the `build` job in `.github/workflows/build.yml`. Uses `softprops/action-gh-release@v2` with a fixed `latest-build` tag to publish all built HTML files as release assets on every successful build, creating stable download URLs at `github.com/<owner>/<repo>/releases/download/latest-build/<game>.html`.
 
-**Decision**: Add `engine/prng.js` exposing `Engine.PRNG`, a seeded pseudo-random number generator class. The algorithm is SFC32 (Small Fast Counting) by Chris Doty-Humphrey, using a 128-bit state (four 32-bit words), period ≥ 2^64, passing PractRand at 32 TB. String seeds are expanded to the 128-bit initial state by cyrb128 (by bryc, CC0 licensed). Integer seeds are expanded via a three-step LCG, then both paths warm up by discarding 15 initial outputs. Public API: `float()` → [0, 1), `int(min, max)` → integer in [min, max], `pick(arr)` → random element, `shuffle(arr)` → Fisher-Yates in place.
+**Context**: Game builds were previously available only as 90-day workflow artifacts (Actions tab) or as files committed to `build/` in the repo (raw GitHub URL, not clean for sharing). Neither provides a stable, bookmarkable player link. The rolling-release pattern uses a consistently-named tag whose asset list is silently replaced on each push, giving a stable download URL without the overhead of per-build tag management.
 
-**Context**: Games currently use `Math.random()` for all randomness. This has two consequences. First, sequences are not reproducible: the same game with the same decisions cannot produce the same procedural content on a second run. Second, per-category independence (level gen, loot, NPC behavior) cannot be maintained by choosing different streams — all calls share a single hidden state. Reproducible sequences are the foundation for daily challenges (seed = today's date string), procedural level generation (seed = level index or run ID), loot tables that are inspectable in testing, and NPC behavior that is stable across runs. A game-use PRNG is also the prerequisite for implementing the pseudo-random distribution (anti-streak proc) primitive planned in `docs/resources/balance.md`.
+Alternatives considered:
 
-Three alternatives were considered:
-
-1. *Use `mulberry32`*: 32-bit state, simpler, widely used. Rejected because 32-bit state has a period of 2^32 (~4 billion outputs), which is within reach for a long single-player session that uses the PRNG heavily. The period gap matters.
-2. *Use `xorshift128+` or `xoshiro`*: good quality and widely used in browser JS engines. Rejected for ergonomics: the canonical implementation uses a typed-array state, which is harder to serialize for save-state or network sync without additional infrastructure. SFC32 uses four plain number fields that can be JSON-serialized trivially.
-3. *SFC32 with cyrb128 (chosen)*: 128-bit state, period ≥ 2^64, well-tested against PractRand, and commonly recommended alongside cyrb128 as the string-seed companion by the same author. Both are CC0 / public domain. The implementation is ~90 lines, no dependencies, no typed arrays.
-
-Implementation was tested in the session via Node.js before commit, verifying: same seed → same sequence, different seeds → different sequences, `float()` in [0, 1) with mean ≈ 0.5 over 10,000 samples, `int(1, 6)` uniform over 60,000 rolls (max deviation < 3%), `shuffle()` yields a valid permutation.
+1. **Per-build tags** (e.g. `release-20260619-001`): each push creates a new release and new asset URLs. Provides an archive but no stable "latest" link that players can bookmark.
+2. **GitHub Pages**: publish `build/` as a Pages site. Provides stable URLs and an index page. Larger scope — requires enabling Pages, choosing a branch, deciding on root path. Deferred to a future ADR when the project is closer to a distribution mode.
+3. **Rolling release (chosen)**: a single `latest-build` tag whose assets are deleted and re-uploaded on each build run. Asset filenames are stable, so URLs are stable, while the tag itself points to the original creation commit.
 
 **Consequences**:
 
-- `Engine.PRNG` is opt-in. Games that do not need reproducible randomness continue to use `Math.random()` unaffected.
-- Multiple independent PRNG instances may coexist (one per stream), and their sequences do not interact.
-- `prng.js` is added to `engine/bundle-manifest.json` (the thirteenth bundled module). Adding it triggers one CI bundle-regeneration run; no manual bundle work needed.
-- String seed `'daily-YYYY-MM-DD'` is the idiomatic pattern for daily-challenge games.
-- The pseudo-random distribution (anti-streak proc) and pity-timer Balance primitive staged in `docs/resources/balance.md` can now be implemented as a thin wrapper over `Engine.PRNG` rather than an ad hoc `Math.random()` call.
+- Built games are accessible at the stable URL `releases/download/latest-build/<game>.html`. These URLs survive pushes and can be bookmarked or linked.
+- `fail_on_unmatched_files: false` allows the step to succeed even if a game's build was skipped upstream.
+- `make_latest: true` marks this as the latest release in the GitHub Releases UI.
+- No new workflow permissions required beyond the `contents: write` already set for the commit-back step (ADR-0019).
+- `generate_release_notes: false` suppresses auto-generated notes; the release body is a fixed human-readable description.
+- GitHub Releases asset-replacement is delete-then-reupload internally; the asset URL remains stable because the filename does not change.
+
+## ADR-0023: Registry validation in CI
+
+Date: 2026-06-20
+
+**Decision**: Add a "Verify root scripts/ and scenes/ have registry entries" step to the `validate` job in `.github/workflows/build.yml`. After the existing JS syntax check, the step scans `scripts/` and `scenes/` at maxdepth 1 (excluding game-specific subdirectories under `games/`) and asserts each `.js` filename appears in that folder's `_registry.md`. A missing entry fails the job with a MISSING message and blocks the build.
+
+**Context**: `scripts/_registry.md` and `scenes/_registry.md` are the authoritative cross-session references for reusable behavior scripts and shared scenes (ADR-0003). Without enforcement, a script can be added and never registered — silently invisible to future sessions that scan the registry as their first source of truth about what tools exist. The failure pattern was already observed (ShapeSprite was built before a registry convention was formalized; its initial commit lacked an entry). A CI gate catches the omission at commit time rather than at next-session discovery time.
+
+Game-specific scripts and scenes under `games/*/scripts/` and `games/*/scenes/` are intentionally excluded. Their entries appear in the root registries (authored by convention during game sessions), but scanning them mechanically would require a more complex matching rule (full path vs. basename) and they are inherently more transient than shared engine scripts. This scope can be expanded in a future ADR if needed.
+
+**Consequences**:
+
+- Any future addition of a `.js` to `scripts/` or `scenes/` (root level) that is not simultaneously registered in the folder's `_registry.md` will fail the `validate` job, blocking `build`.
+- The check is a `grep -qF "$name"` against the markdown file, which is intentionally loose: it matches any occurrence of the filename in the registry, including inside a table row, a path, or a code span. This is sufficient and avoids over-engineering.
+- The nine current root-level files (8 in `scripts/`, 1 in `scenes/`) all pass on the first run.
+- No changes to `_registry.md` files are required; they already cover all current files.
