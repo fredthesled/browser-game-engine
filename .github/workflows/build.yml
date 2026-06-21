@@ -11,6 +11,8 @@
 #   build     — assembles each game with a build-manifest.json into a single
 #               self-contained HTML file. Blocked until validate passes.
 #               Uploads builds as workflow artifacts and commits them to build/.
+#               Creates/updates the rolling "latest-build" GitHub Release with
+#               permanent public download URLs for every built game.
 #
 # Permissions required:
 #   Settings > Actions > General > Workflow permissions must be set to
@@ -140,3 +142,21 @@ jobs:
           file_pattern: build/*.html
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      # Creates or updates the rolling "latest-build" GitHub Release with the
+      # freshly assembled HTML files. Produces permanent public download URLs
+      # of the form: releases/download/latest-build/<game>.html
+      # If an asset with the same filename already exists it is replaced.
+      # fail_on_unmatched_files: false so a run with no manifests is not fatal.
+      - name: Publish rolling "latest-build" GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: "Latest Build"
+          body: |
+            Auto-generated builds from the latest push to main.
+            Each file is a self-contained, single-file HTML game — open in any browser, no install needed.
+          files: build/*.html
+          make_latest: true
+          fail_on_unmatched_files: false
+          generate_release_notes: false

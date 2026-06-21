@@ -352,42 +352,26 @@ Options mirrored ADR-0019's. Manual MCP push is the failing status quo. Chunked 
 - The repo's existing "Read and write permissions" Actions setting (already required by ADR-0019) covers the commit-back step. No new permission is needed.
 - The 2026-06-03 session also left one transitional artifact: the bundle was briefly out of sync with `balance.js` (committed in `engine: add balance module`) until this workflow's first run regenerated it. This is the last time the bundle is expected to drift, since regeneration is no longer a manual step that can be forgotten.
 
-## ADR-0022: Rolling GitHub Release for permanent download URLs
+## ADR-0022: Rolling GitHub Release for permanent game download URLs
 
 Date: 2026-06-19
 
-**Decision**: Add a "Publish rolling 'latest-build' GitHub Release" step at the end of the `build` job in `.github/workflows/build.yml`. Uses `softprops/action-gh-release@v2` with a fixed `latest-build` tag to publish all built HTML files as release assets on every successful build, creating stable download URLs at `github.com/<owner>/<repo>/releases/download/latest-build/<game>.html`.
+**Decision**: Add a "Publish rolling `latest-build` GitHub Release" step to the `build` job in `.github/workflows/build.yml`. After each successful build, the step creates or updates a GitHub Release tagged `latest-build`, attaching every file in `build/*.html` as release assets. If an asset with the same filename already exists on the release it is replaced. This produces permanent, stable public download URLs of the form `https://github.com/fredthesled/browser-game-engine/releases/download/latest-build/<game>.html`.
 
-**Context**: Game builds were previously available only as 90-day workflow artifacts (Actions tab) or as files committed to `build/` in the repo (raw GitHub URL, not clean for sharing). Neither provides a stable, bookmarkable player link. The rolling-release pattern uses a consistently-named tag whose asset list is silently replaced on each push, giving a stable download URL without the overhead of per-build tag management.
+**Context**: Game builds are committed to `build/` in the repository (ADR-0019) and are also available as downloadable workflow artifacts for 90 days. Neither surface is well-suited for sharing: the `build/` path requires repo access to navigate, and workflow artifact URLs are ephemeral (expire at 90 days) and require a GitHub login. For games to be playable by anyone with a link — the intended end state for this engine — a stable, public, zero-login URL is needed.
 
-Alternatives considered:
+GitHub Releases are the natural solution: assets attached to a release receive a permanent, stable URL that is public by default for a public repo. The rolling-tag pattern (`latest-build`, force-updated on each push) means there is one stable URL family per game rather than a tag per build. Two alternative designs were considered:
 
-1. **Per-build tags** (e.g. `release-20260619-001`): each push creates a new release and new asset URLs. Provides an archive but no stable "latest" link that players can bookmark.
-2. **GitHub Pages**: publish `build/` as a Pages site. Provides stable URLs and an index page. Larger scope — requires enabling Pages, choosing a branch, deciding on root path. Deferred to a future ADR when the project is closer to a distribution mode.
-3. **Rolling release (chosen)**: a single `latest-build` tag whose assets are deleted and re-uploaded on each build run. Asset filenames are stable, so URLs are stable, while the tag itself points to the original creation commit.
-
-**Consequences**:
-
-- Built games are accessible at the stable URL `releases/download/latest-build/<game>.html`. These URLs survive pushes and can be bookmarked or linked.
-- `fail_on_unmatched_files: false` allows the step to succeed even if a game's build was skipped upstream.
-- `make_latest: true` marks this as the latest release in the GitHub Releases UI.
-- No new workflow permissions required beyond the `contents: write` already set for the commit-back step (ADR-0019).
-- `generate_release_notes: false` suppresses auto-generated notes; the release body is a fixed human-readable description.
-- GitHub Releases asset-replacement is delete-then-reupload internally; the asset URL remains stable because the filename does not change.
-
-## ADR-0023: Registry validation in CI
-
-Date: 2026-06-20
-
-**Decision**: Add a "Verify root scripts/ and scenes/ have registry entries" step to the `validate` job in `.github/workflows/build.yml`. After the existing JS syntax check, the step scans `scripts/` and `scenes/` at maxdepth 1 (excluding game-specific subdirectories under `games/`) and asserts each `.js` filename appears in that folder's `_registry.md`. A missing entry fails the job with a MISSING message and blocks the build.
-
-**Context**: `scripts/_registry.md` and `scenes/_registry.md` are the authoritative cross-session references for reusable behavior scripts and shared scenes (ADR-0003). Without enforcement, a script can be added and never registered — silently invisible to future sessions that scan the registry as their first source of truth about what tools exist. The failure pattern was already observed (ShapeSprite was built before a registry convention was formalized; its initial commit lacked an entry). A CI gate catches the omission at commit time rather than at next-session discovery time.
-
-Game-specific scripts and scenes under `games/*/scripts/` and `games/*/scenes/` are intentionally excluded. Their entries appear in the root registries (authored by convention during game sessions), but scanning them mechanically would require a more complex matching rule (full path vs. basename) and they are inherently more transient than shared engine scripts. This scope can be expanded in a future ADR if needed.
+1. *Per-build tags* (`build-20260619`, `build-20260620`, …): Clean versioning but no stable URL. Users who bookmark `latest-build/drift.html` would need to update the link after each build. Not suitable as a distribution mechanism.
+2. *GitHub Pages*: Would serve all games from a root URL and support HTML-directory browsing. Requires a separate deploy step and a Pages configuration; a meaningful additional scope. Added to the longer-horizon backlog rather than built now.
 
 **Consequences**:
 
-- Any future addition of a `.js` to `scripts/` or `scenes/` (root level) that is not simultaneously registered in the folder's `_registry.md` will fail the `validate` job, blocking `build`.
-- The check is a `grep -qF "$name"` against the markdown file, which is intentionally loose: it matches any occurrence of the filename in the registry, including inside a table row, a path, or a code span. This is sufficient and avoids over-engineering.
-- The nine current root-level files (8 in `scripts/`, 1 in `scenes/`) all pass on the first run.
-- No changes to `_registry.md` files are required; they already cover all current files.
+- The `latest-build` release is created on the first run. Subsequent runs upsert the release (name and body stay the same; assets are replaced file-by-file).
+- Permanent download URLs are live for every game that has a `build-manifest.json`. Adding a new game automatically adds it to the next release.
+- `fail_on_unmatched_files: false` means a push that produces no built HTML (e.g. a docs-only change with no manifests) silently updates the release with no new assets rather than failing the workflow.
+- `make_latest: true` marks the `latest-build` release as the repo's latest release in the GitHub UI, making it discoverable from the repo homepage.
+- `generate_release_notes: false` suppresses the auto-generated commit-range diff, which would be noise (the release body is kept simple and static).
+- No new permissions are required; the existing `contents: write` at the workflow level covers release creation and asset upload.
+- The `softprops/action-gh-release@v2` action (MIT) is the standard choice for this pattern and is already widely adopted across the GitHub ecosystem. It handles the delete-then-re-upload cycle for same-named assets internally.
+- GitHub Pages remains the right next step when the project wants indexed browsing rather than direct-download links.
