@@ -1,0 +1,12 @@
+{
+  "game": "factory",
+  "title": "Factory",
+  "output": "build/factory.html",
+  "concat": [
+    "engine/engine.bundle.js",
+    "scripts/bootstrap.js",
+    "games/factory/scenes/menu.js",
+    "games/factory/scenes/game.js"
+  ],
+  "bootstrap": "bootstrapGame({ canvasId: 'game', gameName: 'factory', presets: { regular: { w: 900, h: 600 } }, initialScene: (g) => new FactoryMenuScene(g), suppressContextMenu: true });"
+}
